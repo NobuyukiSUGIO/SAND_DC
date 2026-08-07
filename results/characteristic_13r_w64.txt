@@ -1,0 +1,19 @@
+# SAND-64 : an optimal 13-round differential characteristic, p = 2^-64
+# 64 is the minimum weight over all 13-round characteristics (weight <= 63 is UNSAT).
+# Each line: r, dX^r, dY^r  for r = 0..13
+
+# characteristic 1
+  0 0024 0000 0023 0000
+  1 0040 0000 0024 0000
+  2 0000 0000 0040 0000
+  3 0040 0000 0000 0000
+  4 0024 0000 0040 0000
+  5 0023 4000 0024 0000
+  6 2083 2400 0023 4000
+  7 2025 A100 2083 2400
+  8 0050 5100 2025 A100
+  9 0018 1800 0050 5100
+ 10 0011 1000 0018 1800
+ 11 0081 0100 0011 1000
+ 12 0005 0000 0081 0100
+ 13 0053 0100 0005 0000

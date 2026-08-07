@@ -1,0 +1,8 @@
+__pycache__/
+*.pyc
+*.cnf
+*.log
+/trails_parts/
+/trails_w58_fine/
+/trails_w58/
+/trails_w58_all.txt
