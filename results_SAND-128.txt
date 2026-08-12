@@ -1,0 +1,34 @@
+Running SAND-128 differential cryptanalysis (forward / plaintext -> ciphertext):
+Rounds: 19, Bound: 120
+SSb joint-DDT model verified: 97 valid transitions, 58 clauses, all 2^15 assignments checked
+--------------------------------------------------
+Solving SAND-128 differential cryptanalysis with 19 rounds and bound 120
+Using Kissat SAT solver (standalone version)...
+Number of variables: 115158
+Number of clauses: 453469
+Added constraints: 
+  - Plaintext differential x_i_0 (64<=i<128): max 10 ones
+  - Output differential x_i_19 (0<=i<64): max 10 ones
+The problem is satisfiable with model:
+  r                  dX^r                  dY^r   log2(p)   (r: round)
+  0   0000 0000 0000 5111   0000 0000 0000 CCC0         0   <- plaintext side
+  1   0000 0000 0000 003C   0000 0000 0000 5111       -10
+  2   0000 0000 0000 4011   0000 0000 0000 003C       -18
+  3   0000 0000 0000 C000   0000 0000 0000 4011       -24
+  4   0000 0000 0000 0001   0000 0000 0000 C000       -28
+  5   0000 0000 0000 0000   0000 0000 0000 0001       -30
+  6   0000 0000 0000 0001   0000 0000 0000 0000       -30
+  7   0000 0000 0000 C000   0000 0000 0000 0001       -32
+  8   0000 0000 0000 4011   0000 0000 0000 C000       -36
+  9   0000 0000 0000 003C   0000 0000 0000 4011       -42
+ 10   0000 0000 0000 5111   0000 0000 0000 003C       -50
+ 11   0000 0000 0000 CCC0   0000 0000 0000 5111       -60
+ 12   0000 0000 0000 0540   0000 0000 0000 CCC0       -72
+ 13   0000 0000 0000 FC03   0000 0000 0000 0540       -78
+ 14   0000 0000 0000 0441   0000 0000 0000 FC03       -94
+ 15   0000 0000 0000 0C00   0000 0000 0000 0441      -100
+ 16   0000 0000 0000 0040   0000 0000 0000 0C00      -104
+ 17   0000 0000 0000 3C00   0000 0000 0000 0040      -106
+ 18   0000 0000 0000 0051   0000 0000 0000 3C00      -114
+ 19   0000 0000 0000 CC0C   0000 0000 0000 0051      -120   <- ciphertext side
+Differential probability of the 19-round characteristic: p = 2^-120
