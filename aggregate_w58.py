@@ -22,7 +22,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 
 spec = importlib.util.spec_from_file_location(
-    "sand64_verify", os.path.join(HERE, "verify_sand64_key_recovery.py"))
+    "sand64_verify", os.path.join(HERE, "verify_sand64_16R_candar.py"))
 V = importlib.util.module_from_spec(spec)
 sys.modules["sand64_verify"] = V
 spec.loader.exec_module(V)

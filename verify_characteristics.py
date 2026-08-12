@@ -7,7 +7,7 @@ This script does NOT use the SAT model.  For every round transition
 
 it counts the exact number of 32-bit round inputs that realize the transition,
 using a transfer-matrix product over the eight SSb positions (see
-verify_sand64_key_recovery.round_transition_count).  The weight of the
+verify_sand64_16R_candar.round_transition_count).  The weight of the
 transition is 32 - log2(count); a count of zero proves the transition to be
 impossible.  Because the transfer matrix walks the eight synthetic S-boxes
 SSb = (G0, G1) jointly, it enforces the constraint that G0 and G1 consume the
@@ -31,7 +31,7 @@ sys.path.insert(0, HERE)
 import trail_io
 
 _spec = importlib.util.spec_from_file_location(
-    "sand64_verify", os.path.join(HERE, "verify_sand64_key_recovery.py"))
+    "sand64_verify", os.path.join(HERE, "verify_sand64_16R_candar.py"))
 V = importlib.util.module_from_spec(_spec)
 sys.modules["sand64_verify"] = V
 _spec.loader.exec_module(V)
