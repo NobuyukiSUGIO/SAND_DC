@@ -1,30 +1,24 @@
-# SAND-64 — Differential characteristics found by SAT
+# SAND — Differential attacks found by SAT
 
-Reproducible artefacts for the differential cryptanalysis of **SAND-64**.
+Reproducible artefacts for
 
-Main results, all obtained with the SAT model in this repository and re-checked
-by an independent transfer-matrix computation:
+> Nobuyuki Sugio, *Differential Attacks on Lightweight Block Cipher Family SAND*
+> (Hokkaido University of Science)
 
-| Rounds | Minimum weight $-\log_2 p$ | Optimality | Characteristics attaining it |
-| --- | --- | --- | --- |
-| 12 | **58** ( $p = 2^{-58}$ ) | weight $\le 57$ is UNSAT | **12 288**, exhaustively enumerated and proved complete |
-| 13 | **64** ( $p = 2^{-64}$ ) | weight $\le 63$ is UNSAT | one example is published here (not enumerated exhaustively) |
+Both members of the family are covered by one SAT model, differing only in the
+parameters of Table 3 of the paper. Every headline number below is reproduced by
+the search code in this repository **and** re-checked by an independent
+re-implementation that shares no code with the search.
 
-The 12 288 optimal 12-round characteristics involve 352 distinct input
-differences and 352 distinct output differences, forming 6 144 distinct pairs
-$(\Delta P, \Delta C)$. **Every such pair is realized by exactly two
-characteristics**, so the corresponding 12-round differential has probability at
-least $2 \cdot 2^{-58} = 2^{-57}$.
+| | Distinguisher | Key recovery | Data | Time | Memory |
+| --- | --- | --- | --- | --- | --- |
+| **SAND-64** | 12 rounds, $p = 2^{-57}$ | **17 rounds** | $2^{63}$ | $2^{83.5}$ | $2^{58}$ |
+| **SAND-128** | 19 rounds, $p = 2^{-120}$ | **23 rounds** | $2^{126}$ | $2^{122.5}$ | $2^{51}$ |
 
-Only four round-weight vectors $(w_1,\dots,w_{12})$ are realizable; they form
-two time-reversal pairs:
-
-| $(w_1,\dots,w_{12})$ | count |
-| --- | --- |
-| (4, 2, 0, 2, 4, 9, 9, 8, 6, 4, 6, 4) | 5 376 |
-| (4, 6, 4, 6, 8, 9, 9, 4, 2, 0, 2, 4) | 5 376 |
-| (2, 7, 4, 7, 8, 9, 9, 4, 2, 0, 2, 4) | 768 |
-| (4, 2, 0, 2, 4, 9, 9, 8, 7, 4, 7, 2) | 768 |
+The 12-round SAND-64 distinguisher reaches $2^{-57}$ rather than $2^{-58}$
+because the 12 288 optimal characteristics of weight 58 collapse onto 6 144
+distinct $(\Delta P, \Delta C)$ pairs, **each realized by exactly two
+characteristics**.
 
 ## The joint DDT of SSb — why a naive model is wrong
 
@@ -37,109 +31,158 @@ $$\mathrm{SSb}(x) = G_0(x) \,\|\, G_1(x).$$
 Taking the product of the two marginal DDTs admits **157** triples
 $(\delta_{\mathrm{in}}, \delta_{G_0}, \delta_{G_1})$, whereas only **97** are
 jointly realizable. A model built from independent DDTs consequently produces
-"characteristics" containing round transitions of probability exactly zero.
-For example, the marginal model accepts input nibble difference `0x6` together
-with $(\delta_{G_0}, \delta_{G_1}) = (0\mathrm{x}6, 0\mathrm{x}2)$, while the
-joint entry is `DDT_SSb[0x6][0x62] = 0`.
+"characteristics" containing round transitions of probability exactly zero — for
+example input nibble difference `0x6` with
+$(\delta_{G_0}, \delta_{G_1}) = (0\mathrm{x}6, 0\mathrm{x}2)$, while the joint
+entry is `DDT_SSb[0x6][0x62] = 0`. This holds for both variants, since SSb is
+the same 4-bit map in each.
 
-The CNF encoding of the joint DDT used here has 58 clauses over 15 variables and
-its exactness is *proved*, not sampled: `verify_ssb_model()` enumerates all
-$2^{15}$ assignments and compares the models against the table.
+The CNF encoding of the joint DDT is *proved* exact, not sampled:
+`verify_ssb_model()` enumerates all $2^{15}$ assignments and compares the models
+against the table.
+
+## Layout
+
+```
+sand64/    SAND-64:  SAT model, enumeration, 17-round key recovery
+sand128/   SAND-128: SAT model, enumeration, 23-round key recovery
+build/     Kissat binary (not tracked; see Requirements)
+```
+
+Each variant directory is self-contained and keeps its own `results/`. All
+scripts locate their data relative to their own file, so they can be run from
+any working directory.
 
 ## Requirements
 
 * Python 3 (standard library only)
-* [Kissat](https://github.com/arminbiere/kissat) on `PATH`, or at `./build/kissat`
+* [Kissat](https://github.com/arminbiere/kissat) at `build/kissat` in the
+  repository root, or anywhere on `PATH`
 
 Timings below were measured on Ubuntu 24.04.2 LTS, AMD Ryzen 7 5800X, 128 GB RAM.
 
 ## Quick verification (recommended for reviewers)
 
-This is the fastest independent check and it does **not** use the SAT solver at
-all. For every round transition it counts the exact number of 32-bit round
-inputs realizing it by a transfer-matrix product over the eight SSb positions
-(so the joint $G_0/G_1$ constraint is enforced on every shared nibble) and
-derives the weight as $32 - \log_2(\#)$:
+These two scripts are the fastest independent check and they do **not** use the
+SAT solver at all. Each re-implements its cipher from the specification in
+Section IV of the paper and recomputes every claim — round-transition
+probabilities by an exact transfer-matrix product over the SSb positions, the
+key-free filters and guessed-key masks by exhaustive bit tracking, and the
+counting phase by simulation:
 
 ```
-python3 verify_characteristics.py
+python3 sand64/verify_sand64_key_recovery.py     # 17-round attack, 44 checks
+python3 sand128/verify_sand128_key_recovery.py   # 23-round attack
 ```
 
-It verifies that all 12 288 published 12-round characteristics have exact
-weight 58 with no impossible round transition, that they are pairwise distinct,
-and that the published 13-round characteristic has exact weight 64. Runtime is
-a few minutes.
+Both must end with `ALL CHECKS PASSED`. The author's own search modules are
+imported only in the final section, to cross-check that the two independent
+implementations agree.
 
-To check one file on its own:
+## Paper ↔ command
 
-```
-python3 verify_characteristics.py results/trails_w58_all.txt 58
-```
+| Result in the paper | Command | Data file |
+| --- | --- | --- |
+| Minimum weights $B[r]$, SAND-64 | `python3 sand64/matsui_sand64.py` | `sand64/bounds_sand64.json` |
+| Minimum weights $B[r]$, SAND-128 | `python3 sand128/matsui_sand128.py` | `sand128/bounds_sand128.json` |
+| 12-round characteristic, SAND-64 | `python3 sand64/enumerate_w58.py check 58 12` | `sand64/results/trails_w58_all.txt` |
+| Optimality of 58 | `python3 sand64/enumerate_w58.py check 57 12` → UNSAT | |
+| Round-weight vectors of the 12 288 | `python3 sand64/enum_by_wvec.py vectors` | `sand64/results/weight_vectors_58.json` |
+| Completeness of the 12-round list | `python3 sand64/completeness_check.py` → UNSAT | |
+| 19-round characteristic, SAND-128 | `python3 sand128/enumerate_sand128.py 19 120` | `sand128/results/trails_sand128_r19_w120.txt` |
+| Key-free filters (Eq. 9–12) | `python3 sand128/filters_sand128.py validate` | |
+| Guessed round-key bits $k$ | `python3 sand128/keybits_sand128.py` | |
+| Threshold $\tau$ and success probability | `python3 sand128/success_probability_sand128.py` | |
+| Maximum attackable rounds (Discussion) | `python3 sand128/maximize_rounds.py` | |
 
-## Proving completeness of the 12-round list
+## SAND-64: enumeration and its completeness
 
 `verify_characteristics.py` shows that every published characteristic is valid;
-the following shows that **no other one exists**. The 12-round model is built
-with "total weight exactly 58" and *no* partitioning constraint, and every
-published characteristic is added as a blocking clause:
+`completeness_check.py` shows that **no other one exists**. The 12-round model is
+rebuilt with "total weight exactly 58" and *no* partitioning constraint, and
+every published characteristic is added as a blocking clause:
 
 ```
-python3 completeness_check.py
+python3 sand64/verify_characteristics.py     # a few minutes
+python3 sand64/completeness_check.py         # expects UNSATISFIABLE, ~2 min
 ```
 
-Expected output: `UNSATISFIABLE` (about 2 minutes). This argument does not
-depend on how the enumeration was organised.
+Expected `UNSATISFIABLE` — an argument that does not depend on how the
+enumeration was organised.
 
-## Reproducing the search from scratch
-
-Optimality of the bounds — each command prints `SATISFIABLE` or
-`UNSATISFIABLE` together with its runtime:
-
-```
-python3 enumerate_w58.py check 58 12     # SATISFIABLE    (~23 s)
-python3 enumerate_w58.py check 57 12     # UNSATISFIABLE  (~55 s)  => 58 is minimal
-python3 enumerate_w58.py check 64 13     # SATISFIABLE    (~6 s)
-python3 enumerate_w58.py check 63 13     # UNSATISFIABLE  (~182 s) => 64 is minimal
-```
-
-Full enumeration of the weight-58 12-round characteristics. The search space is
-partitioned first by the round-weight vector and then by the set of active SSb
-positions in round 1, giving 92 disjoint sub-slices that are solved in parallel;
-each sub-slice is enumerated by repeated solving with blocking clauses:
+To reproduce the enumeration itself, the search space is partitioned first by
+round-weight vector and then by the set of active SSb positions in round 1,
+giving 92 disjoint sub-slices solved in parallel:
 
 ```
-python3 enum_by_wvec.py vectors          # phase A: the 4 realizable weight vectors
-./run_until_complete.sh 15               # phase B + aggregation + completeness proof
+python3 sand64/enum_by_wvec.py vectors       # phase A: the 4 realizable vectors
+cd sand64 && ./run_until_complete.sh 15      # phase B + aggregation + completeness
 ```
 
-`run_until_complete.sh` takes the number of parallel workers as its argument. It
+`run_until_complete.sh` takes the number of parallel workers as its argument and
 loops until the completeness check returns UNSAT, then compares the regenerated
-`trails_w58_all.txt` with the published `results/trails_w58_all.txt`.
+list with the published `results/trails_w58_all.txt`.
 
-Note that the sub-slice partition is only a means of parallelisation: whatever
-it produces, the final answer is accepted only once the partition-independent
-completeness check passes.
+Results, for reference:
+
+| $(w_1,\dots,w_{12})$ | count |
+| --- | --- |
+| (4, 2, 0, 2, 4, 9, 9, 8, 6, 4, 6, 4) | 5 376 |
+| (4, 6, 4, 6, 8, 9, 9, 4, 2, 0, 2, 4) | 5 376 |
+| (2, 7, 4, 7, 8, 9, 9, 4, 2, 0, 2, 4) | 768 |
+| (4, 2, 0, 2, 4, 9, 9, 8, 7, 4, 7, 2) | 768 |
+
+## SAND-128: enumeration
+
+Same strategy, ported to the 16-column state:
+
+```
+python3 sand128/enum_by_wvec_sand128.py vectors [workers]   # phase A
+python3 sand128/enum_by_wvec_sand128.py run     [workers]   # phase B
+```
+
+Unlike SAND-64, the 19-round weight-120 list is **not** claimed to be
+exhaustive; 151 distinct characteristics of weight 120 were found and every one
+of them was re-checked by the transfer-matrix computation.
 
 ## Files
 
+### `sand64/`
+
 | File | Role |
 | --- | --- |
-| `SAND-64_20260729.py` | SAT model of SAND-64 (joint SSb DDT, cardinality constraints, Kissat interface). Running it directly performs a single bounded search. |
-| `verify_sand64_16R_candar.py` | Exact transfer-matrix computation of round-transition counts, independent of the SAT model. |
-| `trail_io.py` | Reader/writer for the characteristic file format. |
-| `verify_characteristics.py` | **Standalone verification of the published characteristics.** |
-| `completeness_check.py` | **Proof that the 12-round list is complete** (single UNSAT call). |
-| `enumerate_w58.py` | Exactly-$k$ cardinality constraint, single-slice enumeration, `check` mode for the bounds. |
-| `enum_by_wvec.py` | Phase A (realizable round-weight vectors) and per-vector enumeration. |
-| `enum_fine.py` | Phase B: 92 sub-slices enumerated in parallel, resumable. |
-| `aggregate_w58.py` | De-duplication, statistics and transfer-matrix verification of the raw enumeration output. |
-| `run_until_complete.sh` | Driver: enumerate → aggregate → prove completeness, repeat until UNSAT. |
-| `results/trails_w58_all.txt` | All 12 288 optimal 12-round characteristics. |
-| `results/characteristic_13r_w64.txt` | An optimal 13-round characteristic. |
-| `results/weight_vectors_58.json` | The four realizable round-weight vectors. |
-| `results/results_w58_summary.txt` | Summary of the enumeration (in Japanese). |
+| `SAND-64_20260729.py` | SAT model (joint SSb DDT, cardinality constraints, Kissat interface) |
+| `matsui_sand64.py` | Matsui-style lower-bound pruning; computes $B[r]$ incrementally |
+| `enumerate_w58.py` | Exactly-$k$ cardinality constraint, single-slice enumeration, `check` mode |
+| `enum_by_wvec.py` | Phase A (realizable round-weight vectors) and per-vector enumeration |
+| `enum_fine.py` | Phase B: 92 sub-slices enumerated in parallel, resumable |
+| `aggregate_w58.py` | De-duplication, statistics, transfer-matrix verification |
+| `run_until_complete.sh` | Driver: enumerate → aggregate → prove completeness, until UNSAT |
+| `verify_characteristics.py` | Standalone verification of the published characteristics |
+| `completeness_check.py` | Proof that the 12-round list is complete (single UNSAT call) |
+| `verify_sand64_key_recovery.py` | **Independent verification of the 17-round attack** |
+| `trail_io.py` | Reader/writer for the characteristic file format |
+| `results/` | The 12 288 characteristics, the 13-round example, the weight vectors |
 
-## File format
+### `sand128/`
+
+| File | Role |
+| --- | --- |
+| `SAND-128_..._20260805.py` | SAT model |
+| `matsui_sand128.py` | Matsui-style lower-bound pruning; computes $B[r]$ |
+| `run_sand128_bound.py` | Driver for a single bounded search |
+| `enumerate_sand128.py` | All-SAT enumeration for given rounds and weight bound |
+| `enum_by_wvec_sand128.py` | Enumeration partitioned by round-weight vector |
+| `keyrecovery_sand128.py` | Characteristic search under the key-recovery constraints |
+| `filters_sand128.py` | Key-free filter conditions by truncated-difference propagation |
+| `keybits_sand128.py` | Exact count of the guessed round-key bits $k$ |
+| `attack_numbers.py` | Complexity arithmetic for the key-recovery attack |
+| `maximize_rounds.py` | Maximizes $r_{in} + R + r_{out}$ under the key-size constraint |
+| `success_probability_sand128.py` | Threshold $\tau$ and success probability of the counting phase |
+| `verify_sand128_key_recovery.py` | **Independent verification of the 23-round attack** |
+| `results/` | The 19-round weight-120 characteristics |
+
+## Characteristic file format
 
 ```
 # characteristic 1
@@ -149,27 +192,26 @@ completeness check passes.
  12 008A 0000 0090 0000
 ```
 
-Each line is `r  dX^r  dY^r`, where `(dX^0, dY^0)` is the plaintext difference
-and `(dX^R, dY^R)` the ciphertext difference. Bit 31 of `dX^r` is the most
-significant bit of the left half of the state; nibble `j` of the SSb layer is
-formed from bits `31-j`, `23-j`, `15-j`, `7-j`, as in the SAND specification.
-In the forward model `dY^r = dX^{r-1}`, so a characteristic is determined by
-`dY^0` together with `dX^0, ..., dX^R`.
+Each line is `r  dX^r  dY^r`, where $(\Delta X^0, \Delta Y^0)$ is the plaintext
+difference and $(\Delta X^R, \Delta Y^R)$ the ciphertext difference. Bit 31
+(resp. 63) of $\Delta X^r$ is the most significant bit of the left half of the
+state; nibble $j$ of the SSb layer is formed from bits `31-j`, `23-j`, `15-j`,
+`7-j` for SAND-64 and `63-j`, `47-j`, `31-j`, `15-j` for SAND-128, as in the
+specification. In the forward model $\Delta Y^r = \Delta X^{r-1}$, so a
+characteristic is determined by $\Delta Y^0$ together with
+$\Delta X^0, \dots, \Delta X^R$.
 
-## Example — an optimal 12-round characteristic
+## Branches and tags
 
-| r | dX^r | dY^r | log2(p) |
-| --- | --- | --- | --- |
-| 0 | 00120000 | 00190000 | |
-| 1 | 00020000 | 00120000 | −4 |
-| 2 | 00000000 | 00020000 | −6 |
-| 3 | 00020000 | 00000000 | −6 |
-| 4 | 00120000 | 00020000 | −8 |
-| 5 | 00190200 | 00120000 | −12 |
-| 6 | 00C10200 | 00190200 | −21 |
-| 7 | 002B0000 | 00C10200 | −30 |
-| 8 | 002A0000 | 002B0000 | −38 |
-| 9 | 00500000 | 002A0000 | −44 |
-| 10 | 00070000 | 00500000 | −48 |
-| 11 | 00900000 | 00070000 | −54 |
-| 12 | 008A0000 | 00900000 | −58 |
+`main` holds the journal version, covering both variants. Conference versions of
+this work are kept out of the way:
+
+| Ref | Contents |
+| --- | --- |
+| `main` | Journal version: SAND-64 (17 rounds) and SAND-128 (23 rounds) |
+| `paper/candarw2026` | CANDAR-W 2026 version: SAND-64 only, 16-round attack |
+| `candarw2026-submitted` | The exact state submitted to CANDAR-W 2026 |
+
+## License
+
+MIT — see `LICENSE`.

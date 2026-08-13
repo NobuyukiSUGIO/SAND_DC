@@ -1,0 +1,26 @@
+cff-version: 1.2.0
+title: "SAND_DC: differential attacks on the lightweight block cipher family SAND, found by SAT"
+message: "If you use this software, please cite both the software and the paper it accompanies."
+type: software
+authors:
+  - family-names: Sugio
+    given-names: Nobuyuki
+    affiliation: Hokkaido University of Science
+    email: sugio-n@hus.ac.jp
+license: MIT
+repository-code: "https://github.com/NobuyukiSUGIO/SAND_DC"
+keywords:
+  - block cipher
+  - differential cryptanalysis
+  - SAT solver
+  - SAND
+  - lightweight cryptography
+# TODO: fill in once the journal version is accepted (venue, year, volume, DOI),
+# and mint a Zenodo DOI for the corresponding release.
+preferred-citation:
+  type: article
+  title: "Differential Attacks on Lightweight Block Cipher Family SAND"
+  authors:
+    - family-names: Sugio
+      given-names: Nobuyuki
+      affiliation: Hokkaido University of Science

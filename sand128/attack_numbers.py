@@ -12,6 +12,7 @@ import os
 import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
+RESULTS = os.path.join(HERE, "results")
 sys.path.insert(0, HERE)
 import keyrecovery_sand128 as K
 import filters_sand128 as F
@@ -58,7 +59,7 @@ def evaluate(trail):
 
 
 def main():
-    trails = load_trails(os.path.join(HERE, "trails_sand128_r19_w120.txt"))
+    trails = load_trails(os.path.join(RESULTS, "trails_sand128_r19_w120.txt"))
     print(f"{len(trails)} verified 19-round characteristics of weight {W}")
 
     scored = []

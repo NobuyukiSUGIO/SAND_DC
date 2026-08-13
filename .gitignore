@@ -2,10 +2,12 @@ __pycache__/
 *.pyc
 *.cnf
 *.log
-/trails_parts/
-/trails_w58_fine/
-/trails_w58/
-/trails_w58_all.txt
 /build/
-/trails_sand128_r2_w2/
-/trails_sand128_r2_wle3/
+
+# intermediate enumeration output (regenerable)
+/sand64/trails_parts/
+/sand64/trails_w58/
+/sand64/trails_w58_fine/
+/sand64/trails_w58_all.txt
+/sand128/trails_sand128_r2_w2/
+/sand128/trails_sand128_r2_wle3/

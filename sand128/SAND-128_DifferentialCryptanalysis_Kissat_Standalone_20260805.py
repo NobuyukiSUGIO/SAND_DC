@@ -4,13 +4,15 @@ import shutil
 import sys
 import tempfile
 
-class SAND_64_SAT_Model():
+class SAND_128_SAT_Model():
     def __init__(self):
         self.clauses = []
         self.vars = []
-        self.p_box = [7,4,1,6,3,0,5,2]
-        # Kissatの実行パス（./build/kissat が無ければ PATH 上の kissat を使う）
-        self.kissat_path = "./build/kissat" if os.path.exists("./build/kissat") else (shutil.which("kissat") or "./build/kissat")
+        self.p_box = [14,15,8,9,2,3,12,13,6,7,0,1,10,11,4,5]
+        # Kissatの実行パス（リポジトリ直下の build/kissat が無ければ PATH 上の kissat を使う）
+        _built = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                              "build", "kissat")
+        self.kissat_path = _built if os.path.exists(_built) else (shutil.which("kissat") or _built)
         self.aux_var_counter = 0  # 補助変数のカウンター
 
     @staticmethod
@@ -66,11 +68,9 @@ class SAND_64_SAT_Model():
         Output G1:  c0||c1||c2||c3; c0: msb
         Weight:     w1 + w2 + w3, encoded in unary with w1 >= w2 >= w3.
 
-        The nonzero entries of the joint DDT are 2, 4 and 16, so the weight
-        -log2(Pr) of a valid transition is 3, 2 or 0; a weight of 1 never occurs
-        and is excluded by the clauses below.  The clause set was generated from
-        ssb_joint_ddt() and its models were exhaustively checked against the
-        table by verify_ssb_model().
+        SAND-128 uses the same 4-bit G0 and G1 as SAND-64, so the clause set is
+        identical; only the number of parallel S-boxes and the nibble rotation
+        amount differ.  Verified exhaustively by verify_ssb_model().
         """
         return [[-a0,c0],[-a0,w2],[-a1,b1],[-a2,b2],[-a3,c3],[-b3,w2],[-c1,w1],[-c2,w1],[-w1,w2],[a0,-c0],[a1,-b1],[a2,-b2],[a3,-c3],[w1,-w2],[w1,-w3],[-c0,-c1,w3],[b2,c1,-w3],[-a0,b0,b2,b3],[-a2,-a3,c1,w3],[-a2,c1,c2,c3],[-b0,-c1,-c2,w3],[-b0,b2,b3,c0],[-b1,-b2,-c3,w3],[a1,b0,-c0,w3],[a2,-b1,c0,c1],[a3,-c0,-c2,w3],[b0,-b2,c2,w3],[b1,-b3,c0,c3],[b1,b3,-c1,w3],[b1,b3,c0,-c3],[b2,-b3,-c1,w3],[c0,c1,c3,-w3],[-a0,a2,b0,-b1,-c1],[-a1,-a3,-b3,c2,w3],[-a1,-b3,c0,c1,-w3],[-a1,b3,c0,-c1,-w3],[-a2,-b3,c0,-c1,c3],[-a3,b1,c0,-c1,-w3],[-b0,-b3,-c0,-c2,w3],[-b0,b1,b2,-b3,-c1],[-b1,b3,c1,-c2,w3],[a1,-a3,b3,c2,w3],[a1,b0,b2,b3,-w1],[a2,-b0,-b1,-b3,w3],[-a0,-b0,-b2,b3,c2,c3],[-a0,b0,b1,b3,-c1,-c2],[-a1,-a2,b3,-c0,c1,c2],[-a1,-b2,-b3,c1,-c2,-c3],[-a1,b0,-c0,-c1,-c2,c3],[-a3,b1,-b2,b3,c1,-c2],[-b0,b1,-b3,-c1,-c2,c3],[a1,-b3,-c0,c1,c2,-w3],[a1,a3,b0,-b2,-b3,c2],[b0,-b1,b3,-c0,c2,-c3],[-a0,-a1,-a2,-b0,-b3,-c1,c2],[-a0,b0,-b2,-b3,-c1,-c2,-c3],[-a1,-a2,-b0,b3,-c1,-c2,-c3],[-a2,-b0,b1,-c0,-c1,c2,-c3]]
 
@@ -126,26 +126,26 @@ class SAND_64_SAT_Model():
             self.aux_var_counter = v  # 最大変数番号を記録
 
         # ラウンド0の入力
-        for i in range(64):
+        for i in range(128):
             next_var(f"x_{i}_0")
 
         for round in range(1, num_rounds + 1):
-            for i in range(64):
+            for i in range(128):
                 next_var(f"x_{i}_{round}")
-            for i in range(32):
+            for i in range(64):
                 next_var(f"x_bottom_{i}_{round}")
-            for i in range(32):
+            for i in range(64):
                 next_var(f"g0_sx_{i}_{round}")
-            for i in range(32):
+            for i in range(64):
                 next_var(f"g0_sy_{i}_{round}")
-            for i in range(32):
+            for i in range(64):
                 next_var(f"g1_sx_{i}_{round}")
-            for i in range(32):
+            for i in range(64):
                 next_var(f"g1_sy_{i}_{round}")
             # 重みは G0/G1 ごとではなく, 両者を束ねた SSb ごとに 1 組 (unary 3 bit) 持つ
-            for i in range(24):
+            for i in range(48):
                 next_var(f"ssb_w_{i}_{round}")
-            for i in range(32):
+            for i in range(64):
                 next_var(f"p_input_{i}_{round}")
 
         return variables
@@ -159,8 +159,8 @@ class SAND_64_SAT_Model():
         SSb = (G0, G1) の同時差分制約を, 共有される入力ニブルごとに 1 個ずつ課す。
 
         ニブル j の入力差分は
-          * G0 の j 番目の S-box   -> 出力ニブル j
-          * G1 の (j-1) 番目の S-box -> 出力ニブル (j-1) mod 8
+          * G0 の j 番目の S-box    -> 出力ニブル j
+          * G1 の (j-1) 番目の S-box -> 出力ニブル (j-1) mod 16
         の両方に入る。G1 側の入力が 1 ニブル左回転されているためである。
         G0 と G1 の出力差分は同じ入力値から生じなければならないので, 両者を
         単一の SSb 制約 (入力差分 4 bit + G0 出力差分 4 bit + G1 出力差分 4 bit
@@ -171,19 +171,19 @@ class SAND_64_SAT_Model():
         g0_sx と g1_sx はいずれも branching により ΔX^r に等しいので, 入力差分は
         g0_sx から取れば足りる。
         """
-        for j in range(8):
-            a0, a1, a2, a3 = (variables[f"g0_sx_{j}_{round}"], variables[f"g0_sx_{j+8}_{round}"],
-                              variables[f"g0_sx_{j+16}_{round}"], variables[f"g0_sx_{j+24}_{round}"])
-            b0, b1, b2, b3 = (variables[f"g0_sy_{j}_{round}"], variables[f"g0_sy_{j+8}_{round}"],
-                              variables[f"g0_sy_{j+16}_{round}"], variables[f"g0_sy_{j+24}_{round}"])
+        for j in range(16):
+            a0, a1, a2, a3 = (variables[f"g0_sx_{j}_{round}"], variables[f"g0_sx_{j+16}_{round}"],
+                              variables[f"g0_sx_{j+32}_{round}"], variables[f"g0_sx_{j+48}_{round}"])
+            b0, b1, b2, b3 = (variables[f"g0_sy_{j}_{round}"], variables[f"g0_sy_{j+16}_{round}"],
+                              variables[f"g0_sy_{j+32}_{round}"], variables[f"g0_sy_{j+48}_{round}"])
 
-            # 入力ニブル j を消費する G1 の S-box は出力ニブル (j-1) mod 8 を作る
-            i = (j - 1) % 8
-            c0, c1, c2, c3 = (variables[f"g1_sy_{i}_{round}"], variables[f"g1_sy_{i+8}_{round}"],
-                              variables[f"g1_sy_{i+16}_{round}"], variables[f"g1_sy_{i+24}_{round}"])
+            # 入力ニブル j を消費する G1 の S-box は出力ニブル (j-1) mod 16 を作る
+            i = (j - 1) % 16
+            c0, c1, c2, c3 = (variables[f"g1_sy_{i}_{round}"], variables[f"g1_sy_{i+16}_{round}"],
+                              variables[f"g1_sy_{i+32}_{round}"], variables[f"g1_sy_{i+48}_{round}"])
 
-            w1, w2, w3 = (variables[f"ssb_w_{j}_{round}"], variables[f"ssb_w_{j+8}_{round}"],
-                          variables[f"ssb_w_{j+16}_{round}"])
+            w1, w2, w3 = (variables[f"ssb_w_{j}_{round}"], variables[f"ssb_w_{j+16}_{round}"],
+                          variables[f"ssb_w_{j+32}_{round}"])
 
             for clause in self.ssb_s_box(a0, a1, a2, a3, b0, b1, b2, b3, c0, c1, c2, c3, w1, w2, w3):
                 self.clauses.append(clause)
@@ -243,79 +243,27 @@ class SAND_64_SAT_Model():
                     self.clauses.append([-s[(i-1,j-1)], -self.vars[i-1], s[(i,j)]])
                     self.clauses.append([s[(i-1,j-1)], -s[(i,j)]])
                     self.clauses.append([self.vars[i-1], -s[(i,j)]])
-        
-        # 最後に、m+1個以上の変数が真にならないようにする
-        if m+1 <= n and (n,m+1) in s:
-            self.clauses.append([-s[(n,m+1)]])
-    
-    def sequential_encoding_method_for_vars(self, vars_list, m):
-        """
-        Sequential counter encoding for at-most-m constraint on specific variables
-        """
-        n = len(vars_list)
-        if m >= n:
-            return  # 制約なし
-        
-        # Sequential counter method
-        s = {}
-        
-        # 新しい補助変数を作成
-        for i in range(1, n+1):
-            for j in range(1, min(i, m+1)+1):
-                self.aux_var_counter += 1
-                s[(i,j)] = self.aux_var_counter
-        
-        # 制約を追加
-        # s[1][1] = vars_list[0]
-        self.clauses.append([-vars_list[0], s[(1,1)]])
-        self.clauses.append([vars_list[0], -s[(1,1)]])
-        
-        # 他の変数の初期化
-        for j in range(2, min(2, m+1)+1):
-            if (1,j) in s:
-                self.clauses.append([-s[(1,j)]])
-        
-        # 再帰的な定義
-        for i in range(2, n+1):
-            # s[i][1] = s[i-1][1] OR vars_list[i-1]
-            if (i-1,1) in s and (i,1) in s:
-                self.clauses.append([-s[(i-1,1)], s[(i,1)]])
-                self.clauses.append([-vars_list[i-1], s[(i,1)]])
-                self.clauses.append([s[(i-1,1)], vars_list[i-1], -s[(i,1)]])
-            
-            for j in range(2, min(i, m+1)+1):
-                # s[i][j] = s[i-1][j] OR (s[i-1][j-1] AND vars_list[i-1])
-                if (i-1,j) in s and (i,j) in s and (i-1,j-1) in s:
-                    self.clauses.append([-s[(i-1,j)], s[(i,j)]])
-                    self.clauses.append([-s[(i-1,j-1)], -vars_list[i-1], s[(i,j)]])
-                    self.clauses.append([s[(i-1,j)], s[(i-1,j-1)], -s[(i,j)]])
-                    self.clauses.append([s[(i-1,j)], vars_list[i-1], -s[(i,j)]])
-                elif (i,j) in s and (i-1,j-1) in s:
-                    # 対角要素 j = i: s[i][i] = s[i-1][i-1] AND vars_list[i-1]
-                    self.clauses.append([-s[(i-1,j-1)], -vars_list[i-1], s[(i,j)]])
-                    self.clauses.append([s[(i-1,j-1)], -s[(i,j)]])
-                    self.clauses.append([vars_list[i-1], -s[(i,j)]])
 
         # 最後に、m+1個以上の変数が真にならないようにする
         if m+1 <= n and (n,m+1) in s:
             self.clauses.append([-s[(n,m+1)]])
 
     def hex_to_bits(self, hex_str):
-        """32ビットの16進文字列をMSBファーストのビット列に変換する"""
+        """64ビットの16進文字列をMSBファーストのビット列に変換する"""
         value = int(hex_str.replace(" ", ""), 16)
-        return [(value >> (31 - i)) & 1 for i in range(32)]
+        return [(value >> (63 - i)) & 1 for i in range(64)]
 
     def bits_to_hex(self, bits):
-        """MSBファーストの32ビット列を16進文字列に変換する"""
+        """MSBファーストの64ビット列を16進文字列に変換する"""
         value = 0
         for bit in bits:
             value = (value << 1) | bit
-        return f"{value >> 16:04X} {value & 0xFFFF:04X}"
+        return " ".join(f"{(value >> (48 - 16*k)) & 0xFFFF:04X}" for k in range(4))
 
     def fix_state_difference(self, variables, round, delta_x, delta_y):
         """
         ラウンドroundの状態差分 (ΔX^round, ΔY^round) を固定する
-        ΔX^round: x_{i}_{round} (0 <= i < 32), ΔY^round: x_{i}_{round} (32 <= i < 64)
+        ΔX^round: x_{i}_{round} (0 <= i < 64), ΔY^round: x_{i}_{round} (64 <= i < 128)
         変数の添字 i = 0 が MSB に対応する
         """
         for i, bit in enumerate(self.hex_to_bits(delta_x)):
@@ -323,14 +271,14 @@ class SAND_64_SAT_Model():
             self.clauses.append([var] if bit == 1 else [-var])
 
         for i, bit in enumerate(self.hex_to_bits(delta_y)):
-            var = variables[f"x_{i + 32}_{round}"]
+            var = variables[f"x_{i + 64}_{round}"]
             self.clauses.append([var] if bit == 1 else [-var])
 
     def permutation(self, input_bits, output_bits):
         """Permutation layer using the P-box."""
         for j in range(4):
-            for i in range(8):
-                output_bits[i+8*j] = input_bits[self.p_box[i]+8*j]
+            for i in range(16):
+                output_bits[i+16*j] = input_bits[self.p_box[i]+16*j]
 
     def xor_model(self, input1_bits, input2_bits, output_bits):
         # For each bit position, model the XOR operation
@@ -371,37 +319,37 @@ class SAND_64_SAT_Model():
 
     def Search_Differential_Distingusher(self, num_rounds, num_bounds, variables):
         # Split the plaintext into two halves
-        left_bits = [variables[str("x_" + str(i) + "_0")] for i in range(0,32)]
-        right_bits = [variables[str("x_" + str(i) + "_0")] for i in range(32,64)]
+        left_bits = [variables[str("x_" + str(i) + "_0")] for i in range(0,64)]
+        right_bits = [variables[str("x_" + str(i) + "_0")] for i in range(64,128)]
 
         for round in range(1, num_rounds+1):
             # 1. Branching for G0
-            g0_input = [variables[str("g0_sx_" + str(i) + "_" + str(round))] for i in range(0,32)]
-            left_bottom = [variables[str("x_bottom_" + str(i) + "_" + str(round))] for i in range(0,32)]
+            g0_input = [variables[str("g0_sx_" + str(i) + "_" + str(round))] for i in range(0,64)]
+            left_bottom = [variables[str("x_bottom_" + str(i) + "_" + str(round))] for i in range(0,64)]
             self.branching_model(left_bits, g0_input, left_bottom)
 
             # 2. Branching for G1
-            g1_input = [variables[str("g1_sx_" + str(i) + "_" + str(round))] for i in range(0,32)]
-            right_bottom = [variables[str("x_" + str(i) + "_" + str(round))] for i in range(32,64)]
+            g1_input = [variables[str("g1_sx_" + str(i) + "_" + str(round))] for i in range(0,64)]
+            right_bottom = [variables[str("x_" + str(i) + "_" + str(round))] for i in range(64,128)]
             self.branching_model(left_bottom, g1_input, right_bottom)
             
             # 3. S-box transformation for G0 and G1
             self.s_box_model(variables, round)
 
             # 4. XOR operation between G0_output and G1_output
-            g0_output = [variables[str("g0_sy_" + str(i) + "_" + str(round))] for i in range(0,32)]
-            g1_output = [variables[str("g1_sy_" + str(i) + "_" + str(round))] for i in range(0,32)]
-            p_input = [variables[str("p_input_" + str(i) + "_" + str(round))] for i in range(0,32)]
+            g0_output = [variables[str("g0_sy_" + str(i) + "_" + str(round))] for i in range(0,64)]
+            g1_output = [variables[str("g1_sy_" + str(i) + "_" + str(round))] for i in range(0,64)]
+            p_input = [variables[str("p_input_" + str(i) + "_" + str(round))] for i in range(0,64)]
             self.xor_model(g0_output, g1_output, p_input)
 
             # 5. Permutation
-            p_output = [0] * 32
+            p_output = [0] * 64
             for j in range(4):
-                for i in range(8):
-                    p_output[i+8*j] = p_input[self.p_box[i]+8*j]
+                for i in range(16):
+                    p_output[i+16*j] = p_input[self.p_box[i]+16*j]
 
             # 5. XOR operation between p_output and right half
-            right_after_xor = [variables[str("x_" + str(i) + "_" + str(round))] for i in range(0,32)]
+            right_after_xor = [variables[str("x_" + str(i) + "_" + str(round))] for i in range(0,64)]
             self.xor_model(p_output, right_bits, right_after_xor)
 
             # 6. Swap the halves for the next round
@@ -424,40 +372,40 @@ class SAND_64_SAT_Model():
         逆伝搬のステップ数を t (1 <= t <= R) とし, 状態 (U^t, V^t) を
             (U^t, V^t) = (ΔX^{R-t}, ΔY^{R-t})
         と定義する。すなわち t = 0 が暗号文側 (ΔX^R, ΔY^R), t = R が平文側 (ΔX^0, ΔY^0)
-        に対応する。変数 x_{i}_{t} は 0 <= i < 32 が U^t, 32 <= i < 64 が V^t を表す。
+        に対応する。変数 x_{i}_{t} は 0 <= i < 64 が U^t, 64 <= i < 128 が V^t を表す。
         """
         for t in range(1, num_rounds + 1):
-            u_prev = [variables[str("x_" + str(i) + "_" + str(t-1))] for i in range(0,32)]
-            v_prev = [variables[str("x_" + str(i) + "_" + str(t-1))] for i in range(32,64)]
+            u_prev = [variables[str("x_" + str(i) + "_" + str(t-1))] for i in range(0,64)]
+            v_prev = [variables[str("x_" + str(i) + "_" + str(t-1))] for i in range(64,128)]
 
             # 1. U^t = V^{t-1} であり, この値が G0, G1 の入力にも分岐する
             #    Branching for G0
-            g0_input = [variables[str("g0_sx_" + str(i) + "_" + str(t))] for i in range(0,32)]
-            bottom = [variables[str("x_bottom_" + str(i) + "_" + str(t))] for i in range(0,32)]
+            g0_input = [variables[str("g0_sx_" + str(i) + "_" + str(t))] for i in range(0,64)]
+            bottom = [variables[str("x_bottom_" + str(i) + "_" + str(t))] for i in range(0,64)]
             self.branching_model(v_prev, g0_input, bottom)
 
             # 2. Branching for G1 and U^t
-            g1_input = [variables[str("g1_sx_" + str(i) + "_" + str(t))] for i in range(0,32)]
-            u_cur = [variables[str("x_" + str(i) + "_" + str(t))] for i in range(0,32)]
+            g1_input = [variables[str("g1_sx_" + str(i) + "_" + str(t))] for i in range(0,64)]
+            u_cur = [variables[str("x_" + str(i) + "_" + str(t))] for i in range(0,64)]
             self.branching_model(bottom, g1_input, u_cur)
 
             # 3. S-box transformation for G0 and G1
             self.s_box_model(variables, t)
 
             # 4. XOR operation between G0_output and G1_output
-            g0_output = [variables[str("g0_sy_" + str(i) + "_" + str(t))] for i in range(0,32)]
-            g1_output = [variables[str("g1_sy_" + str(i) + "_" + str(t))] for i in range(0,32)]
-            p_input = [variables[str("p_input_" + str(i) + "_" + str(t))] for i in range(0,32)]
+            g0_output = [variables[str("g0_sy_" + str(i) + "_" + str(t))] for i in range(0,64)]
+            g1_output = [variables[str("g1_sy_" + str(i) + "_" + str(t))] for i in range(0,64)]
+            p_input = [variables[str("p_input_" + str(i) + "_" + str(t))] for i in range(0,64)]
             self.xor_model(g0_output, g1_output, p_input)
 
             # 5. Permutation
-            p_output = [0] * 32
+            p_output = [0] * 64
             for j in range(4):
-                for i in range(8):
-                    p_output[i+8*j] = p_input[self.p_box[i]+8*j]
+                for i in range(16):
+                    p_output[i+16*j] = p_input[self.p_box[i]+16*j]
 
             # 6. V^t = XOR(U^{t-1}, P^t)
-            v_cur = [variables[str("x_" + str(i) + "_" + str(t))] for i in range(32,64)]
+            v_cur = [variables[str("x_" + str(i) + "_" + str(t))] for i in range(64,128)]
             self.xor_model(p_output, u_prev, v_cur)
 
         # Make sequential_encording model
@@ -536,8 +484,8 @@ class SAND_64_SAT_Model():
 
         # 入力ラウンドの状態ビット
         print("r = 0", end=" ")
-        for i in range(64):
-            if i == 32:
+        for i in range(128):
+            if i == 64:
                 print(end=" ")
             print(get_bit(variables[f"x_{i}_0"]), end="")
         print("")
@@ -546,30 +494,30 @@ class SAND_64_SAT_Model():
         # 各ラウンドの出力状態ビット
         for r in range(1, num_rounds + 1):
             print(f"r = {r}", end=" ")
-            for i in range(64):
-                if i == 32:
+            for i in range(128):
+                if i == 64:
                     print(end=" ")
                 print(get_bit(variables[f"x_{i}_{r}"]), end="")
             print(end=" ")
 
             # G0の状態ビット
-            for i in range(32):
+            for i in range(64):
                 print(get_bit(variables[f"g0_sx_{i}_{r}"]), end="")
             print(end=" ")
-            for i in range(32):
+            for i in range(64):
                 print(get_bit(variables[f"g0_sy_{i}_{r}"]), end="")
             print(end=" ")
 
             # G1の状態ビット
-            for i in range(32):
+            for i in range(64):
                 print(get_bit(variables[f"g1_sx_{i}_{r}"]), end="")
             print(end=" ")
-            for i in range(32):
+            for i in range(64):
                 print(get_bit(variables[f"g1_sy_{i}_{r}"]), end="")
             print(end=" ")
 
             # SSb ごとの重み (G0, G1 をまとめて 1 組)
-            for i in range(24):
+            for i in range(48):
                 print(get_bit(variables[f"ssb_w_{i}_{r}"]), end="")
                 p += 1 * int(get_bit(variables[f"ssb_w_{i}_{r}"]))
             print(" p=2^-",p)
@@ -578,29 +526,29 @@ class SAND_64_SAT_Model():
         """
         平文側 (r = 0) から暗号文側 (r = num_rounds) への差分特性を16進数で出力する
 
-        変数 x_{i}_{r} は 0 <= i < 32 が ΔX^r, 32 <= i < 64 が ΔY^r を表す。
+        変数 x_{i}_{r} は 0 <= i < 64 が ΔX^r, 64 <= i < 128 が ΔY^r を表す。
         log2(p) は平文側から数えた累積の重み（各ラウンドの SSb の重みの和）である。
         """
         model_set = set(result_model)
         def get_bit(var): return 1 if var in model_set else 0
 
         def state_hex(r):
-            delta_x = [get_bit(variables[f"x_{i}_{r}"]) for i in range(0, 32)]
-            delta_y = [get_bit(variables[f"x_{i}_{r}"]) for i in range(32, 64)]
+            delta_x = [get_bit(variables[f"x_{i}_{r}"]) for i in range(0, 64)]
+            delta_y = [get_bit(variables[f"x_{i}_{r}"]) for i in range(64, 128)]
             return self.bits_to_hex(delta_x), self.bits_to_hex(delta_y)
 
-        print(f"{'r':>3} {'dX^r':>11} {'dY^r':>11} {'log2(p)':>9}   (r: round)")
+        print(f"{'r':>3} {'dX^r':>21} {'dY^r':>21} {'log2(p)':>9}   (r: round)")
         delta_x, delta_y = state_hex(0)
-        print(f"{0:>3} {delta_x:>11} {delta_y:>11} {0:>9}   <- plaintext side")
+        print(f"{0:>3} {delta_x:>21} {delta_y:>21} {0:>9}   <- plaintext side")
 
         weight = 0
         for r in range(1, num_rounds + 1):
             # ラウンド r で通過する SSb の重み
-            for i in range(24):
+            for i in range(48):
                 weight += get_bit(variables[f"ssb_w_{i}_{r}"])
             delta_x, delta_y = state_hex(r)
             tail = "   <- ciphertext side" if r == num_rounds else ""
-            print(f"{r:>3} {delta_x:>11} {delta_y:>11} {-weight:>9}{tail}")
+            print(f"{r:>3} {delta_x:>21} {delta_y:>21} {-weight:>9}{tail}")
 
         print(f"Differential probability of the {num_rounds}-round characteristic: p = 2^-{weight}")
 
@@ -613,30 +561,33 @@ class SAND_64_SAT_Model():
         def get_bit(var): return 1 if var in model_set else 0
 
         def state_hex(t):
-            delta_x = [get_bit(variables[f"x_{i}_{t}"]) for i in range(0, 32)]
-            delta_y = [get_bit(variables[f"x_{i}_{t}"]) for i in range(32, 64)]
+            delta_x = [get_bit(variables[f"x_{i}_{t}"]) for i in range(0, 64)]
+            delta_y = [get_bit(variables[f"x_{i}_{t}"]) for i in range(64, 128)]
             return self.bits_to_hex(delta_x), self.bits_to_hex(delta_y)
 
-        print(f"{'t':>3} {'r':>3} {'dX^r':>11} {'dY^r':>11} {'log2(p)':>9}   (t: backward step, r: round)")
+        print(f"{'t':>3} {'r':>3} {'dX^r':>21} {'dY^r':>21} {'log2(p)':>9}   (t: backward step, r: round)")
         delta_x, delta_y = state_hex(0)
-        print(f"{0:>3} {num_rounds:>3} {delta_x:>11} {delta_y:>11} {0:>9}   <- ciphertext side (fixed)")
+        print(f"{0:>3} {num_rounds:>3} {delta_x:>21} {delta_y:>21} {0:>9}   <- ciphertext side")
 
         weight = 0
         for t in range(1, num_rounds + 1):
             # 逆伝搬ステップ t で通過する SSb の重み（暗号化のラウンド num_rounds-t+1 に対応）
-            for i in range(24):
+            for i in range(48):
                 weight += get_bit(variables[f"ssb_w_{i}_{t}"])
             delta_x, delta_y = state_hex(t)
             tail = "   <- plaintext side" if t == num_rounds else ""
-            print(f"{t:>3} {num_rounds - t:>3} {delta_x:>11} {delta_y:>11} {-weight:>9}{tail}")
+            print(f"{t:>3} {num_rounds - t:>3} {delta_x:>21} {delta_y:>21} {-weight:>9}{tail}")
 
         print(f"Differential probability of the {num_rounds}-round characteristic: p = 2^-{weight}")
 
-    def run_backward_without_key(self, num_rounds, num_bounds, ciphertext_diff=None, plaintext_diff=None):
+    def run_backward_without_key(self, num_rounds, num_bounds, ciphertext_diff=None, plaintext_diff=None,
+                                 max_plaintext_ones=None, max_output_ones=None):
         """
-        選択暗号文攻撃の立場で, 暗号文側の差分を固定して平文側へ逆伝搬させる探索を行う
-        ciphertext_diff: (ΔX^R, ΔY^R)  … 逆伝搬の出発点 (t = 0)
-        plaintext_diff : (ΔX^0, ΔY^0)  … 平文側 (t = num_rounds) も固定する場合に指定する
+        選択暗号文攻撃の立場で, 暗号文側から平文側へ逆伝搬させる探索を行う
+        ciphertext_diff  : (ΔX^R, ΔY^R)  … 逆伝搬の出発点 (t = 0) を固定する場合に指定する
+        plaintext_diff   : (ΔX^0, ΔY^0)  … 平文側 (t = num_rounds) を固定する場合に指定する
+        max_plaintext_ones: 平文差分 ΔY^0 の1の個数の上限（差分を固定しない場合の絞り込み用）
+        max_output_ones   : 暗号文差分 ΔX^R の1の個数の上限（差分を固定しない場合の絞り込み用）
         """
         # define variables
         variables = self.generate_variables(num_rounds)
@@ -645,7 +596,7 @@ class SAND_64_SAT_Model():
         self.Search_Differential_Distingusher_Backward(num_rounds, num_bounds, variables)
 
         # ciphertext differentials != all_0
-        self.clauses.append([variables[str("x_" + str(i) + "_0")] for i in range(0,64)])
+        self.clauses.append([variables[str("x_" + str(i) + "_0")] for i in range(0,128)])
 
         # Fix the ciphertext difference (ΔX^R, ΔY^R) : starting point of the backward search
         if ciphertext_diff is not None:
@@ -657,8 +608,20 @@ class SAND_64_SAT_Model():
             self.fix_state_difference(variables, num_rounds, plaintext_diff[0], plaintext_diff[1])
             print(f"Fixed plaintext difference: (dX^0, dY^0) = ({plaintext_diff[0]}, {plaintext_diff[1]})")
 
+        # 平文差分 ΔY^0 = x_{i}_{R} (64<=i<128) の1を最小化する
+        if plaintext_diff is None and max_plaintext_ones is not None:
+            self.vars = [variables[f"x_{i}_{num_rounds}"] for i in range(64, 128)]
+            self.sequential_encoding_method(max_plaintext_ones)
+            print(f"  - Plaintext differential dY^0 (x_i_{num_rounds} for 64<=i<128): max {max_plaintext_ones} ones")
+
+        # 暗号文差分 ΔX^R = x_{i}_{0} (0<=i<64) の1を最小化する
+        if ciphertext_diff is None and max_output_ones is not None:
+            self.vars = [variables[f"x_{i}_0" ] for i in range(0, 64)]
+            self.sequential_encoding_method(max_output_ones)
+            print(f"  - Ciphertext differential dX^{num_rounds} (x_i_0 for 0<=i<64): max {max_output_ones} ones")
+
         # solve SAT model and print the result
-        print(f"Solving SAND-64 differential cryptanalysis (backward) with {num_rounds} rounds and bound {num_bounds}")
+        print(f"Solving SAND-128 differential cryptanalysis (backward) with {num_rounds} rounds and bound {num_bounds}")
         print("Using Kissat SAT solver (standalone version)...")
         print(f"Number of variables: {self.aux_var_counter}")
         print(f"Number of clauses: {len(self.clauses)}")
@@ -670,37 +633,43 @@ class SAND_64_SAT_Model():
         else:
             print("The problem is unsatisfiable.")
 
-    def run_without_key(self, num_rounds, num_bounds, output_diff=None, input_diff=None):
-        """
-        平文側から暗号文側へ順方向に伝搬させる探索を行う
-        output_diff: (ΔX^R, ΔY^R) … 暗号文側 (r = num_rounds) を固定する場合に指定する
-        input_diff : (ΔX^0, ΔY^0) … 平文側 (r = 0) を固定する場合に指定する
-        差分特性は print_characteristics_forward() により16進数で出力される
-        """
+    def run_without_key(self, num_rounds, num_bounds, max_plaintext_ones, max_output_ones):
         # define variables
         variables = self.generate_variables(num_rounds)
 
         # generate SAT model for SLIM without key
         self.Search_Differential_Distingusher(num_rounds, num_bounds, variables)
-
+        
         # input differentials != all_0
-        self.clauses.append([variables[str("x_" + str(i) + "_0")] for i in range(0,64)])
+        self.clauses.append([variables[str("x_" + str(i) + "_0")] for i in range(0,128)])
 
-        # Fix the input difference (ΔX^0, ΔY^0)
-        if input_diff is not None:
-            self.fix_state_difference(variables, 0, input_diff[0], input_diff[1])
-            print(f"Fixed input difference: (dX^0, dY^0) = ({input_diff[0]}, {input_diff[1]})")
-
-        # Fix the output difference of the last round (ΔX^r, ΔY^r)
-        if output_diff is not None:
-            self.fix_state_difference(variables, num_rounds, output_diff[0], output_diff[1])
-            print(f"Fixed output difference: (dX^{num_rounds}, dY^{num_rounds}) = ({output_diff[0]}, {output_diff[1]})")
+        # 平文差分の制約: x_{i}_0 (32<=i) の1を最小化
+        # 右半分の64ビット（x_64_0からx_127_0）に対して制約を追加
+        plaintext_vars_to_minimize = []
+        for i in range(64, 128):  # 64から127まで（64ビット）
+            plaintext_vars_to_minimize.append(variables[f"x_{i}_0"])
+        
+        # これらの変数の合計を制限
+        self.vars = plaintext_vars_to_minimize
+        self.sequential_encoding_method(max_plaintext_ones)
+        
+        # 最終段出力差分の制約: x_{i}_{r} (0<=i<64) の1を最小化
+        output_vars_to_minimize = []
+        for i in range(64):  # 0から63まで（64ビット）
+            output_vars_to_minimize.append(variables[f"x_{i}_{num_rounds}"])
+        
+        # これらの変数の合計を制限
+        self.vars = output_vars_to_minimize
+        self.sequential_encoding_method(max_output_ones)
 
         # solve SAT model and print the result
-        print(f"Solving SAND-64 differential cryptanalysis with {num_rounds} rounds and bound {num_bounds}")
+        print(f"Solving SAND-128 differential cryptanalysis with {num_rounds} rounds and bound {num_bounds}")
         print("Using Kissat SAT solver (standalone version)...")
         print(f"Number of variables: {self.aux_var_counter}")
         print(f"Number of clauses: {len(self.clauses)}")
+        print("Added constraints: ")
+        print(f"  - Plaintext differential x_i_0 (64<=i<128): max {max_plaintext_ones} ones")
+        print(f"  - Output differential x_i_{num_rounds} (0<=i<64): max {max_output_ones} ones")
         
         result_boolean, result_model = self.solve()
         if result_boolean:
@@ -714,7 +683,7 @@ class SAND_64_SAT_Model():
 #--------------------------#
 
 class Tee:
-    """標準出力への出力を results.txt にも同時に書き出すためのクラス"""
+    """標準出力への出力を結果ファイルにも同時に書き出すためのクラス"""
     def __init__(self, *streams):
         self.streams = streams
 
@@ -727,33 +696,42 @@ class Tee:
             stream.flush()
 
 if __name__ == "__main__":
-    model = SAND_64_SAT_Model()
+    model = SAND_128_SAT_Model()
     # num_rounds:r, num_bounds:m
-    r, b = 12, 58
+    r, b = 19, 120
 
-    # 選択暗号文攻撃の立場: 12段目の差分を固定し, 暗号文側から平文側へ逆伝搬させる
-    # 12-round differential distinguisher of SAND-64 (Table 3 of the paper)
-    # ciphertext_diff = ("0492 9600", "0003 8000")  # (dX^12, dY^12)
+    # 選択暗号文攻撃の立場: 暗号文側から平文側へ逆伝搬させる
+    # 暗号文差分 (dX^19, dY^19) を固定する場合は次の行を設定する
+    # ciphertext_diff = ("0000 0000 0000 0000", "0000 0000 0000 0000")
     ciphertext_diff = None
-    # 平文側の差分 (dX^0, dY^0) も固定する場合は次の行を有効にする
-    # plaintext_diff = ("0046 0000", "00F0 0000")
+    # 平文差分 (dX^0, dY^0) を固定する場合は次の行を設定する
+    # plaintext_diff = ("0000 0000 0000 0000", "0000 0000 0000 0000")
     plaintext_diff = None
 
-    # 実行結果をスクリプトと同じディレクトリの results.txt に出力する
-    result_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), "results.txt")
+    # 差分を固定しない側の絞り込み（1の個数の上限）
+    max_plaintext_ones = 10   # 平文差分 dY^0 の1の個数の上限
+    max_output_ones = 10      # 暗号文差分 dX^19 の1の個数の上限
+
+    # 実行結果を results/results_SAND-128.txt に出力する
+    _results = os.path.join(os.path.dirname(os.path.abspath(__file__)), "results")
+    os.makedirs(_results, exist_ok=True)
+    result_file = os.path.join(_results, "results_SAND-128.txt")
 
     with open(result_file, 'w') as f:
         stdout = sys.stdout
         sys.stdout = Tee(stdout, f)
         try:
-            print(f"Running SAND-64 differential cryptanalysis (backward / chosen ciphertext):")
+            print(f"Running SAND-128 differential cryptanalysis (forward / plaintext -> ciphertext):")
             print(f"Rounds: {r}, Bound: {b}")
             model.verify_ssb_model()
             print("-" * 50)
-            model.run_without_key(r, b, ciphertext_diff, plaintext_diff)
-            #model.run_backward_without_key(r, b, ciphertext_diff, plaintext_diff)
+            model.run_without_key(r, b, max_plaintext_ones, max_output_ones)
+            #model.run_backward_without_key(r, b, ciphertext_diff, plaintext_diff, max_plaintext_ones, max_output_ones)
         finally:
             sys.stdout = stdout
 
     print("-" * 50)
     print(f"Results are saved in {result_file}")
+
+    # 順方向（平文側 -> 暗号文側）で探索する場合は run_without_key() を使用する
+    # model.run_without_key(r, b, max_plaintext_ones, max_output_ones)
