@@ -79,6 +79,25 @@ Both must end with `ALL CHECKS PASSED`. The author's own search modules are
 imported only in the final section, to cross-check that the two independent
 implementations agree.
 
+## Regression test
+
+CNF generation is fully deterministic, so the SHA-256 of a generated CNF is a
+fingerprint of the model. `tests/cnf_fingerprint.py` builds sixteen instances
+across both variants — Matsui pruning on and off, the exactly-$k$ enumeration
+model, the weight-vector partition, and the key-recovery boundary constraints —
+and compares their fingerprints against `tests/cnf_baseline.json`:
+
+```
+python3 tests/cnf_fingerprint.py            # ~2 s, no SAT solving
+python3 tests/cnf_fingerprint.py --update   # re-record, only after an intended change
+```
+
+This is what makes restructuring the code safe: if the fingerprints are
+unchanged, the search behaves identically, without re-running any search. It is
+sensitive to changes no size check would catch — the plaintext- and
+ciphertext-side boundary constraints produce CNFs with identical variable and
+clause counts but different fingerprints, so swapping them fails the test.
+
 ## Paper ↔ command
 
 | Result in the paper | Command | Data file |
@@ -159,6 +178,7 @@ of them was re-checked by the transfer-matrix computation.
 | `enum_fine.py` | Phase B: 92 sub-slices enumerated in parallel, resumable |
 | `aggregate_w58.py` | De-duplication, statistics, transfer-matrix verification |
 | `run_until_complete.sh` | Driver: enumerate → aggregate → prove completeness, until UNSAT |
+| `transfer_matrix_sand64.py` | Exact round-transition counts by a transfer-matrix product, independent of the SAT model; used by the enumeration and verification scripts |
 | `verify_characteristics.py` | Standalone verification of the published characteristics |
 | `completeness_check.py` | Proof that the 12-round list is complete (single UNSAT call) |
 | `verify_sand64_key_recovery.py` | **Independent verification of the 17-round attack** |

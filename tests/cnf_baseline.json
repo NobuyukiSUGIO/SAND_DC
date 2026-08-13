@@ -1,0 +1,85 @@
+{
+ "cases": {
+  "sand128/kr/r6_w18_ct4": {
+   "clauses": 33340,
+   "sha256": "f928f000210b9b8eae850d49569ad4361fe58f7eceb6d7ccab7fdbe2135c85b3",
+   "vars": 8971
+  },
+  "sand128/kr/r6_w18_free": {
+   "clauses": 32616,
+   "sha256": "407bd9f58b0266c17b1c5ccdf1617dff7d5189774f5326033c7118b345af9c6f",
+   "vars": 8789
+  },
+  "sand128/kr/r6_w18_pt4": {
+   "clauses": 33340,
+   "sha256": "2f2617c8191835612e2ba709bc535551af5947fef58784d61eae9ed526b2191c",
+   "vars": 8971
+  },
+  "sand128/kr/r6_w18_pt4_ct6": {
+   "clauses": 34274,
+   "sha256": "ebe5e14c1087624f6df1aa166187f3e7e5d550086c6da9be7ca2a7ea832e4519",
+   "vars": 9206
+  },
+  "sand128/matsui/r4_w8": {
+   "clauses": 14380,
+   "sha256": "1be291f3cc79f56d41d44f94ea4f0d471d12db23cc8feddd6a3a76026b089aa9",
+   "vars": 4060
+  },
+  "sand128/matsui/r6_w18": {
+   "clauses": 32616,
+   "sha256": "407bd9f58b0266c17b1c5ccdf1617dff7d5189774f5326033c7118b345af9c6f",
+   "vars": 8789
+  },
+  "sand128/matsui/r8_w32": {
+   "clauses": 63784,
+   "sha256": "919e78bfa2a2f1ccc9afcea25bc8c03f6b29be3fb657bc880e08714343a40b43",
+   "vars": 16752
+  },
+  "sand128/matsui/r8_w32_nom": {
+   "clauses": 63777,
+   "sha256": "60a4f365500d23bd25d8eca54bc5f06937396df469cbf87fc547ba5a04bffcc6",
+   "vars": 16752
+  },
+  "sand128/wvec/r19_w120": {
+   "clauses": 535978,
+   "sha256": "02cbd39a594a644436f919767de2b2e5499936f5d037a526db1f6ed284038019",
+   "vars": 136204
+  },
+  "sand64/enum/r6_w18_exact": {
+   "clauses": 15956,
+   "sha256": "1e9485ce0e7224be6246776fdd43e1d6dabf8cbd714e0d5e6309a77e9eca139f",
+   "vars": 4309
+  },
+  "sand64/enum/r6_w18_le": {
+   "clauses": 15955,
+   "sha256": "c899d0b036acfa468b490bc175464f834bcedb840221d9b6aa0f5b69ce948666",
+   "vars": 4309
+  },
+  "sand64/matsui/r4_w8": {
+   "clauses": 7116,
+   "sha256": "a3763ad45604744e522a4e339e531e05283b3e4a0e8accb63a90849778789ad9",
+   "vars": 2012
+  },
+  "sand64/matsui/r6_w18": {
+   "clauses": 15960,
+   "sha256": "fc0d02cbab378d147844ffacbf570f0693ee6fe377d5dfdfe52eea6ec39a99ef",
+   "vars": 4309
+  },
+  "sand64/matsui/r8_w32": {
+   "clauses": 30824,
+   "sha256": "eb5e4ef64f7ddbc0b8dc39d50c8babcedca133047313b7c31f5d1fc5a96d23e4",
+   "vars": 8112
+  },
+  "sand64/matsui/r8_w32_nom": {
+   "clauses": 30817,
+   "sha256": "49be986af2ec06a0235f11a06429473096e760e0db03ee730143e7dd1714d88d",
+   "vars": 8112
+  },
+  "sand64/wvec/r12_w58": {
+   "clauses": 86316,
+   "sha256": "78056969e4ad33ab1ef76f339fb5c4710e3c068399599b04f2a48efcaac89e2d",
+   "vars": 22305
+  }
+ },
+ "note": "python3 tests/cnf_fingerprint.py \u3067\u691c\u67fb\u3059\u308b\u3002CNF \u751f\u6210\u306f\u6c7a\u5b9a\u7684\u306a\u306e\u3067, \u6307\u7d0b\u304c\u4e00\u81f4\u3059\u308c\u3070\u63a2\u7d22\u306e\u6319\u52d5\u306f\u5909\u308f\u3063\u3066\u3044\u306a\u3044\u3002"
+}
