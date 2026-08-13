@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Independent verification of the 23-round key-recovery attack on SAND-128
-described in paper/SAND-128_DC/main.tex.
+described in paper/SAND_DC_IEICE/main.tex (2^126 chosen ciphertexts version).
 
 Nothing in this file imports the author's modules for the cryptographic
 primitives; SAND-128 is re-implemented from the specification given in
@@ -337,7 +337,121 @@ check("Eq.(12) mask is not weaker than what is observed", (M1 & ~obs1) == 0,
 
 print()
 print("=" * 78)
-print("4.  guessed-key masks of the Appendix")
+print("4.  column numbering of Section V and the appendix column sets")
+print("=" * 78)
+# The paper numbers the columns of the 4 x n/4 array from the RIGHT: column j is
+# the j-th nibble x[j] = (x_{4j+3}, x_{4j+2}, x_{4j+1}, x_{4j}) of the n-bit
+# word, as in the SAND specification (x[0] = least significant nibble).  The
+# re-implementation above indexes bits from the MSB, so its column c and the
+# paper's column j are related by j = n/4-1-c.  This section checks that the two
+# describe the same cipher and re-derives the appendix column sets in the
+# paper's numbering.
+
+def cols_lsb(w, ncol=16):
+    """column j = (x{3}[j], x{2}[j], x{1}[j], x{0}[j]), bit j counted from the LSB."""
+    m = (1 << ncol) - 1
+    rows = [(w >> ((3 - k) * ncol)) & m for k in range(4)]        # rows[0] = x{3}
+    return [sum(((rows[k] >> j) & 1) << (3 - k) for k in range(4)) for j in range(ncol)]
+
+
+def uncols_lsb(c, ncol=16):
+    rows = [0] * 4
+    for j, v in enumerate(c):
+        for k in range(4):
+            if (v >> (3 - k)) & 1:
+                rows[k] |= 1 << j
+    w = 0
+    for k in range(4):
+        w |= rows[k] << ((3 - k) * ncol)
+    return w
+
+
+def load(Pl, ncol=16):
+    """state loading of Section V: row x{3-k}[j] = Pl_{4j+k}."""
+    rows = [0] * 4
+    for j in range(ncol):
+        for k in range(4):                       # k = 3 -> row x{3}
+            if (Pl >> (4 * j + k)) & 1:
+                rows[3 - k] |= 1 << j
+    w = 0
+    for k in range(4):
+        w |= rows[k] << ((3 - k) * ncol)
+    return w
+
+
+check("cols_lsb / uncols_lsb round-trip",
+      all(uncols_lsb(cols_lsb(w)) == w for w in [rnd64() for _ in range(300)]))
+# Section V: column j of the loaded array is the j-th nibble of the plaintext word
+sec5_ok = True
+for _ in range(300):
+    Pl = rnd64()
+    c = cols_lsb(load(Pl))
+    sec5_ok &= all(c[j] == ((Pl >> (4 * j)) & 0xF) for j in range(16))
+check("Sect. V: column j of the array is the nibble x[j] = (x_{4j+3}..x_{4j})", sec5_ok)
+check("paper column j = implementation column n/4-1-j",
+      all(cols_lsb(w) == cols(w)[::-1] for w in [rnd64() for _ in range(300)]))
+
+# Sect. VI-A: in the paper's numbering, x[j] feeds N_0 at column j and N_1 at
+# column j+1, i.e. output column j collects G0(col j) and G1(col j-1)
+def F_lsb(x):
+    c = cols_lsb(x)
+    return P(uncols_lsb([G0(c[j]) ^ G1(c[(j - 1) % 16]) for j in range(16)]))
+
+
+check("Sect. VI-A: 'x[j] feeds the (j+1)-th SSb of G_1' reproduces f exactly",
+      all(F_lsb(w) == F(w) for w in [rnd64() for _ in range(300)] + [0, MASK64, 1]))
+
+# --- the two appendix column sets, in the paper's numbering ---
+def active(diff, ncol):
+    c = cols_lsb(diff, ncol)
+    return [j for j in range(ncol) if c[j]], c
+
+
+DX3_64 = 0x008C0000                      # Appendix A, SAND-64 (n/4 = 8 columns)
+DX2_128 = 0x000000000000CC0C             # Appendix B, SAND-128 (n/4 = 16 columns)
+J_A, cA = active(DX3_64, 8)
+J_B, cB = active(DX2_128, 16)
+print(f"  Appendix A: dX^3 = {DX3_64:08X} -> columns {J_A}, "
+      f"delta = {sorted({hex(cA[j]) for j in J_A})}")
+print(f"  Appendix B: dX^2 = {DX2_128:016X} -> columns {J_B}, "
+      f"delta = {sorted({hex(cB[j]) for j in J_B})}")
+check("Appendix A column set is {2,3,7} with delta = 0x4",
+      J_A == [2, 3, 7] and all(cA[j] == 0x4 for j in J_A))
+check("Appendix B column set is {2,3,10,11,14,15} with delta = 0x1",
+      J_B == [2, 3, 10, 11, 14, 15] and all(cB[j] == 0x1 for j in J_B))
+
+# the round-key masks must be supported exactly on those columns, in the rows
+# that the derivative actually depends on
+def support(mask, ncol):
+    c = cols_lsb(mask, ncol)
+    colset = [j for j in range(ncol) if c[j]]
+    rowset = set()
+    for j in colset:
+        rowset |= {3 - k for k in range(4) if (c[j] >> (3 - k)) & 1}
+    return colset, sorted(rowset)
+
+
+def dep_rows(delta):
+    """input bits u_b on which D_delta SSb actually depends (b = 3 is u_3)."""
+    def D(u):
+        return ((G0(u) ^ G0(u ^ delta)) << 4) | (G1(u) ^ G1(u ^ delta))
+    return sorted({b for b in range(4) if any(D(u) != D(u ^ (1 << b)) for u in range(16))})
+
+
+MK2_64 = 0x8C008C8C                       # Appendix A, sk^2
+cols_m, rows_m = support(MK2_64, 8)
+check("M_K2 (SAND-64) sits on columns {2,3,7} and rows u_3,u_1,u_0",
+      cols_m == [2, 3, 7] and rows_m == dep_rows(0x4) == [0, 1, 3],
+      f"columns {cols_m}, rows {rows_m}, derivative needs {dep_rows(0x4)}")
+MK1_128 = 0xCC0CCC0CCC0C0000           # Appendix B, sk^1 (re-checked in section 5)
+cols_m, rows_m = support(MK1_128, 16)
+check("M_K1 (SAND-128) sits on columns {2,3,10,11,14,15} and rows u_3,u_2,u_1",
+      cols_m == [2, 3, 10, 11, 14, 15] and rows_m == dep_rows(0x1) == [1, 2, 3],
+      f"columns {cols_m}, rows {rows_m}, derivative needs {dep_rows(0x1)}")
+
+print()
+print("=" * 78)
+print("5.  guessed-key masks of the Appendix")
 print("=" * 78)
 MK0 = 0xFE3FFF3FFF3BFF3F
 MK1 = 0xCC0CCC0CCC0C0000
@@ -414,13 +528,14 @@ print(f"       (single masked-bit flips changed the outcome in {tight0}/600 (sk^
 
 print()
 print("=" * 78)
-print("5.  wrong-key behaviour and ranking (scaled-down simulation)")
+print("6.  wrong-key behaviour and ranking (scaled-down simulation)")
 print("=" * 78)
-# 16 planted right pairs, guess a 12-bit sub-window of M_K0 (rest fixed correct)
+# 32 planted right pairs (= E[c_right] for 2^125 pairs), guessing a 14-bit
+# sub-window of M_K0 with the remaining bits fixed to their correct values
 SUBBITS = [i for i in range(64) if (MK0 >> i) & 1][:14]
 sk0, sk1, sk2 = rnd64(), rnd64(), rnd64()
 pairs = []
-for _ in range(16):
+for _ in range(32):
     X3, Y3 = rnd64(), rnd64()
     x, y = X3, Y3
     xs, ys = X3 ^ DX3, Y3 ^ DY3
@@ -451,70 +566,108 @@ for t, i in enumerate(SUBBITS):
     correct |= ((sk0 >> i) & 1) << t
 best = max(counters.values())
 winners = [c for c, v in counters.items() if v == best]
+others = sorted(v for c, v in counters.items() if c != correct)
 check("correct partial key is the unique maximum counter",
       winners == [correct],
-      f"max = {best} (of 16 right pairs), #ties = {len(winners)}, "
-      f"2nd best = {sorted(counters.values())[-2]}")
+      f"max = {best} (of 32 planted right pairs), #ties = {len(winners)}, "
+      f"best wrong counter = {others[-1]}")
+# Note on the threshold: the paper's tau = 14 is calibrated against the
+# wrong-key randomisation hypothesis, in which a wrong class collects
+# Poisson(2^-3) counts. It must not be applied to this sub-window, whose keys
+# differ from the correct one in a few bits only and are therefore *not*
+# independent wrong classes: on a planted right pair a differing bit is often
+# inert, so near-correct window keys score far above 2^-3. The ranking test
+# above is the meaningful one at this scale; the Poisson calibration itself is
+# checked arithmetically in section 6.
+print(f"       counters of the 2^{len(SUBBITS)} window keys: correct = "
+      f"{counters[correct]}, best wrong = {others[-1]}, median = "
+      f"{others[len(others) // 2]}")
 
 print()
 print("=" * 78)
-print("6.  complexity arithmetic")
+print("7.  complexity arithmetic")
 print("=" * 78)
 import math
-N = 124
+N = 125                                          # pairs
 W = 120
 f0, f1 = 27, 52
 k = 72
 rounds = 23
+TAU = 14
+E_WRONG = -6.5                                   # log2 E[# wrong classes kept]
 print(f"  pairs                  2^{N}")
 print(f"  chosen ciphertexts     2^{N+1}   (involution -> 2 texts per pair)")
 print(f"  right pairs            2^{N-W} = {2**(N-W)}")
-print(f"  after Eq.(9)           2^{N-f0}")
-print(f"  after Eq.(10)          2^{N-f0-f1}")
+print(f"  after Eq.(11)          2^{N-f0}")
+print(f"  after Eq.(12)          2^{N-f0-f1}")
 print(f"  wrong class expectation 2^{N-128}")
 # staged early abort: the residual conditions are 37 bits (dX^2) and 12 (dX^3)
 resid2, resid3 = 128 - f0 - f1 - 12, 12
-sA = (N - f0 - f1) + 35                      # 2^45 pairs x 2^35 guesses of M_K0^(1)
+sA = (N - f0 - f1) + 35                      # 2^46 pairs x 2^35 guesses of M_K0^(1)
 survA = sA - resid2
 sB = survA + 37                              # 19 more sk^0 bits + 18 of sk^1
 check("residual conditions sum to the 128-bit condition",
       f0 + f1 + resid2 + resid3 == 128, f"{f0}+{f1}+{resid2}+{resid3}")
-check("staged counting reproduces 2^72 x 2^-4 increments", sB - resid3 == k - 4,
-      f"2^{sB - resid3} vs 2^{k-4}")
-t1 = math.log2(2 / rounds) + (N - f0)
-t2 = math.log2(4 / rounds) + sB
-t3 = 24.6 + (128 - k)                        # retained classes x 2^(128-k), tau = 8
-T = math.log2(2 ** t1 + 2 ** t2 + 2 ** t3)
-# key-outer loop: no counter array, memory is the stored pairs plus the class list
-M = math.log2(2 * 2 ** (N - f0 - f1) * 16 + 2 ** 24.6 * k / 8)
-Tdata = 124 + math.log2(3 / (rounds * 15))
+check(f"staged counting reproduces 2^{k} x 2^{N-128} increments",
+      sB - resid3 == k + (N - 128), f"2^{sB - resid3} vs 2^{k + N - 128}")
 print(f"  stage 1 2^{sA} -> 2^{survA} survivors ; stage 2 2^{sB} -> 2^{sB-resid3} counts")
-print(f"  T_kr = 2^{t1:.2f} + 2^{t2:.2f} + 2^{t3:.2f} = 2^{T:.2f}   (paper 2^93.5)")
-print(f"  T_data (2^124 pair inspections)  = 2^{Tdata:.2f}   (paper 2^117.2)")
-print(f"  T      = 2^{math.log2(2**Tdata + 2**T):.2f}                   (paper 2^117.2)")
-print(f"  M = 2^{M:.2f} bytes                (paper 2^50)")
-check("key-recovery time matches the paper", abs(T - 93.5) < 0.1, f"2^{T:.2f}")
-check("total time matches the paper",
-      abs(math.log2(2**Tdata + 2**T) - 117.2) < 0.1, f"2^{math.log2(2**Tdata + 2**T):.2f}")
-check("memory matches the paper", abs(M - 50) < 0.1, f"2^{M:.2f}")
-check("data 2^125 < full codebook 2^128", N + 1 < 128)
+
+# the paper's single sum, all terms in units of 2/23 of a 23-round encryption
+u = math.log2(2 / rounds)
+t_data = u + (N + 1)                             # 2 * 2^N  (Steps 1 and 2)
+t_dx1 = u + (N - f0)                             # Step 3
+t_st1 = u + sA                                   # Stage 1
+t_st2 = u + sB                                   # Stage 2
+t_fin = max(E_WRONG, 0.0) + (128 - k)            # Step 5, tau = 14 keeps only the right class
+T = math.log2(2**t_data + 2**t_dx1 + 2**t_st1 + 2**t_st2 + 2**t_fin)
+T_kr = math.log2(2**t_dx1 + 2**t_st1 + 2**t_st2 + 2**t_fin)
+# key-outer loop: no counter array and, at tau = 14, no list of retained classes
+M = math.log2(2 * 2 ** (N - f0 - f1) * 16)
+no_abort = math.log2(4 / rounds) + (N - f0 - f1) + k
+print(f"  Steps 1,2 2^{t_data:.2f} | Step 3 2^{t_dx1:.2f} | Stage 1 2^{t_st1:.2f}"
+      f" | Stage 2 2^{t_st2:.2f} | Step 5 2^{t_fin:.2f}")
+print(f"  T      = 2^{T:.2f}    (paper 2^122.5)")
+print(f"  T_kr   = 2^{T_kr:.2f}     (paper 2^94.5)")
+print(f"  M      = 2^{M:.2f} bytes  (paper 2^51)")
+print(f"  merged stages, no early abort = 2^{no_abort:.2f}  (paper 2^115.5), "
+      f"still below Steps 1,2 by 2^{t_data - no_abort:.1f}")
+check("total time matches the paper", abs(T - 122.5) < 0.1, f"2^{T:.2f}")
+check("key-recovery time matches the paper", abs(T_kr - 94.5) < 0.1, f"2^{T_kr:.2f}")
+check("memory matches the paper", abs(M - 51) < 0.1, f"2^{M:.2f}")
+check("no-early-abort figure matches the paper", abs(no_abort - 115.5) < 0.1,
+      f"2^{no_abort:.2f}")
+check(f"data 2^{N+1} < full codebook 2^128", N + 1 < 128)
 check("time < exhaustive search 2^128", T < 128)
 
 # signal/noise with the Poisson model over 2^72 classes
+def poisson_ge(lam, tau):
+    """P[Poisson(lam) >= tau], summed exactly over the complement."""
+    s, term = 0.0, 1.0
+    for j in range(tau):
+        if j:
+            term *= lam / j
+        s += term
+    return -math.expm1(-lam) * 0 + (1.0 - math.exp(-lam) * s)
+
 lam_r = 2.0 ** (N - W)
 lam_w = 2.0 ** (N - 128)
+p_succ = poisson_ge(lam_r, TAU)
+# E[# wrong classes >= tau]; the tail is tiny, so the leading term is exact enough
+log_p_w = (-lam_w / math.log(2) + TAU * math.log2(lam_w)
+           - math.log2(math.factorial(TAU)))
 print()
-print("  wrong-key noise: E[C_wrong] = 2^%d = %.4f, E[C_right] = 2^%d = %d"
-      % (N - 128, lam_w, N - W, int(lam_r)))
-# crude bound: P(Poisson(2^-4) >= 16) * 2^72
-logp = -lam_w / math.log(2) + 16 * math.log2(lam_w) - math.log2(math.factorial(16))
-print(f"  log2 P(one wrong class reaches 16 counts) ~ {logp:.1f}; "
-      f"times 2^72 classes -> 2^{logp + 72:.1f}")
-check("wrong classes cannot reach the right class's counter", logp + 72 < -10)
+print("  Poisson model: E[C_right] = 2^%d = %d, E[C_wrong] = 2^%d = %.4f"
+      % (N - W, int(lam_r), N - 128, lam_w))
+print(f"  Pr[C_right >= {TAU}] = {p_succ:.5f}   (paper 0.99988)")
+print(f"  E[# wrong classes >= {TAU}] = 2^{log_p_w + k:.1f}   (paper 2^-6.5)")
+check("success probability matches the paper", abs(p_succ - 0.99988) < 1e-4,
+      f"{p_succ:.5f}")
+check("no wrong class is expected to survive the threshold", log_p_w + k < 0,
+      f"2^{log_p_w + k:.1f}")
 
 print()
 print("=" * 78)
-print("7.  cross-check against the author's own implementation")
+print("8.  cross-check against the author's own implementation")
 print("=" * 78)
 sys.path.insert(0, HERE)
 import keyrecovery_sand128 as K
