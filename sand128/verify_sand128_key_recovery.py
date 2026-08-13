@@ -667,7 +667,98 @@ check("no wrong class is expected to survive the threshold", log_p_w + k < 0,
 
 print()
 print("=" * 78)
-print("8.  cross-check against the author's own implementation")
+print("8.  the formulas exactly as printed in main.tex")
+print("=" * 78)
+# Sections 0-7 check that the *attack* is sound. They do not check that the
+# formulas printed in the paper say what the implementation does -- a gap that
+# let two typographic errors through review. This section closes it: each
+# printed relation is transcribed literally, evaluated, and required to
+# reproduce the true cipher, and the erroneous variant is required to fail.
+
+# --- 8a. the round recurrence of Stage 1 / Stage 2 and of Eq. (A.1) ---
+# printed:  dX^c = dX^{c-2} XOR D_{dX^{c-1}} f(X^{c-1})
+# rejected: dX^c = dX^{c-2} XOR P_n( D_{dX^{c-1}} f(X^{c-1}) )   (P_n twice)
+def printed_next_diff(dX_prev2, X_prev1, X_prev1s):
+    return dX_prev2 ^ F(X_prev1) ^ F(X_prev1s)
+
+
+def double_p_variant(dX_prev2, X_prev1, X_prev1s):
+    return dX_prev2 ^ P(F(X_prev1) ^ F(X_prev1s))
+
+
+printed_ok = variant_rejected = True
+for _ in range(300):
+    sk0, sk1, sk2 = rnd64(), rnd64(), rnd64()
+    X3, Y3 = rnd64(), rnd64()
+    x, y, xs, ys = X3, Y3, X3 ^ DX3, Y3 ^ DY3
+    for k in (sk2, sk1, sk0):
+        x, y = dec_round(x, y, k)
+        xs, ys = dec_round(xs, ys, k)
+    X0, Y0, X0s, Y0s = x, y, xs, ys
+    X1, X1s = Y0 ^ F(X0) ^ sk0, Y0s ^ F(X0s) ^ sk0
+    X2, X2s = X0 ^ F(X1) ^ sk1, X0s ^ F(X1s) ^ sk1
+    X3r, X3rs = X1 ^ F(X2) ^ sk2, X1s ^ F(X2s) ^ sk2
+    for dprev2, a, b, truth in ((X0 ^ X0s, X1, X1s, X2 ^ X2s),
+                                (X1 ^ X1s, X2, X2s, X3r ^ X3rs)):
+        printed_ok &= printed_next_diff(dprev2, a, b) == truth
+        variant_rejected &= double_p_variant(dprev2, a, b) != truth
+check("printed recurrence dX^c = dX^(c-2) XOR D f(X^(c-1)) reproduces the cipher",
+      printed_ok)
+check("the discarded variant with an extra P_n does NOT reproduce the cipher",
+      variant_rejected, "guards against re-introducing the double P_n")
+
+# --- 8b. the transfer-matrix relation of Section VII-B-3 ---
+# printed:  T[j] = d_{0,j} XOR d_{1,(j-1) mod n/4}   with LSB-first columns
+# rejected: T[j] = d_{0,j} XOR d_{1,j+1}
+def transitions_feasible(shift):
+    """number of the 19 rounds whose transition admits a solution."""
+    good = 0
+    for r in range(1, 20):
+        dxp, dyp = TRAIL[r - 1]
+        dxc = TRAIL[r][0]
+        T = cols_lsb(p_inv(dxc ^ dyp))
+        din = cols_lsb(dxp)
+        opts = [[(0, 0)] if din[m] == 0 else
+                [((o >> 4) & 0xF, o & 0xF) for o in range(256) if DDT[din[m]][o]]
+                for m in range(16)]
+        for combo in itertools.product(*opts):
+            if all(T[j] == (combo[j][0] ^ combo[(j + shift) % 16][1])
+                   for j in range(16)):
+                good += 1
+                break
+    return good
+
+
+feasible_printed = transitions_feasible(-1)
+feasible_wrong = transitions_feasible(+1)
+print(f"  T[j] = d0_j XOR d1_(j-1)  (printed) : {feasible_printed}/19 transitions feasible")
+print(f"  T[j] = d0_j XOR d1_(j+1)            : {feasible_wrong}/19 transitions feasible")
+check("printed transfer-matrix index reproduces every round transition",
+      feasible_printed == 19)
+check("the opposite index does not", feasible_wrong < 19,
+      "guards against re-introducing the MSB-first form")
+
+# --- 8c. the source file still carries the corrected wording ---
+TEX = os.path.join(HERE, "..", "..", "paper", "SAND_DC_IEICE", "main.tex")
+if os.path.exists(TEX):
+    tex = open(TEX, encoding="utf-8", errors="replace").read()
+    banned = {
+        r"P_n\!\left(D_{\Delta": "double application of P_n",
+        r"d_{1,j+1}": "MSB-first transfer-matrix index",
+        "leave no wrong class behind": "expectation stated as a guarantee",
+    }
+    hits = [why for pat, why in banned.items() if pat in tex]
+    check("main.tex is free of the three corrected defects", not hits,
+          "; ".join(hits) if hits else "none present")
+    required = [r"d_{1,(j-1)\bmod\frac{n}{4}}"]
+    check("main.tex carries the corrected transfer-matrix index",
+          all(pat in tex for pat in required))
+else:
+    print(f"  [skip] {TEX} not found; source-text checks not run")
+
+print()
+print("=" * 78)
+print("9.  cross-check against the author's own implementation")
 print("=" * 78)
 sys.path.insert(0, HERE)
 import keyrecovery_sand128 as K
