@@ -2,22 +2,24 @@
 """
 SAND-128 : 選択暗号文設定の鍵回復攻撃に向けた差分特性の探索と検証。
 
-CANDAR W 2026 の SAND-64 論文 (Differential Attack on AND-RX-based Lightweight
-Block Cipher SAND-64) の構成を SAND-128 に移す。
+論文誌版 (paper/SAND_DC_IEICE) の 23 段攻撃の構成に合わせる。
 
-1. 暗号文側からの挿入 (選択暗号文設定)
-   R 段の識別子を攻撃の第 s 段から第 s+R 段に置く。復号方向のラウンド関数は
-   暗号化のラウンド関数の左右半分を入れ替えたものに等しいので, 順方向の特性
-   (ΔX^t, ΔY^t) は攻撃側の番号付けでは
+1. 前向きの挿入 (選択暗号文設定)
+   R 段の識別子を攻撃の第 s 段から第 s+R 段に, 向きを変えずに置く。
 
-       (ΔX^{s+R-t}, ΔY^{s+R-t}) = (ΔY^t, ΔX^t)
+       (ΔX^{s+t}, ΔY^{s+t}) = (ΔX^t, ΔY^t)
 
-   となる。実際, U^t = ΔY^{R-t}, V^t = ΔX^{R-t} と置くと r = R-t-1 に対して
-       V^{t+1} = ΔX^{r}   = U^t
-       U^{t+1} = ΔY^{r}   = ΔX^{r+1} ⊕ P(ΔG0 ⊕ ΔG1) = V^t ⊕ P(F(U^t))
-   であり順方向と同一の関係式を満たす。ラウンド重みは順序が反転する。
-   論文の (ΔX^15, ΔY^15) = (00182C28, 00404000) が Table III の
-   (ΔX^0, ΔY^0) = (00404000, 00182C28) の swap であることと一致する。
+   選択暗号文設定であっても特性を反転させる必要はない。攻撃の第 s+R 段の差分
+   (a, b) = (ΔX^R, ΔY^R) は, 暗号文の対応付け
+
+       (X, Y) -> (X ⊕ a, Y ⊕ b ⊕ f(X) ⊕ f(X ⊕ a))
+
+   によって最終ラウンド鍵に依存せず強制できる (不動点自由対合)。したがって
+   暗号文側の 1 段は無料で, 平文側には第 0..s-1 段が残る。
+
+   注意: 特性を反転して挿入すると, 平文側の鍵非依存フィルタとして
+   filters_sand128.py が返す条件は右対の 100% が違反する成立しない条件になる。
+   向きは attack_numbers.py および verify_sand128_key_recovery.py と一致させる。
 
 2. 手順 4 : 鍵回復コストを目的関数に入れる
    鍵推測に必要なビット数を決めるのは差分の「活性ニブル (SSb 位置) の個数」で
@@ -190,8 +192,11 @@ def build(rounds, weight, bounds, max_nib_pt=None, max_nib_ct=None):
     """
     rounds 段・総重み <= weight のモデル。
 
-    max_nib_pt : 攻撃の平文側境界 (= 特性の ΔX^R と ΔX^{R-1}) の活性ニブル数の上限
-    max_nib_ct : 攻撃の暗号文側境界 (= 特性の ΔX^0 と ΔY^0) の活性ニブル数の上限
+    前向きに挿入するので, 攻撃の平文側境界が特性の第 0 段, 暗号文側境界が
+    第 R 段である。
+
+    max_nib_pt : 攻撃の平文側境界 (= 特性の ΔX^0 と ΔY^0) の活性ニブル数の上限
+    max_nib_ct : 攻撃の暗号文側境界 (= 特性の ΔX^R と ΔX^{R-1}) の活性ニブル数の上限
     """
     m = M.CounterModel()
     variables = m.generate_variables(rounds)
@@ -211,16 +216,16 @@ def build(rounds, weight, bounds, max_nib_pt=None, max_nib_ct=None):
             m.clauses.append([-m.counter_s[(PER_ROUND * k, limit + 1)]])
 
     # --- 端の活性ニブル数の制約 ---
-    if max_nib_ct is not None:
+    if max_nib_pt is not None:
         ind = add_nibble_indicators(m, variables, 0, "X") + \
               add_nibble_indicators(m, variables, 0, "Y")
         m.vars = ind
-        m.sequential_encoding_method(max_nib_ct)
-    if max_nib_pt is not None:
+        m.sequential_encoding_method(max_nib_pt)
+    if max_nib_ct is not None:
         ind = add_nibble_indicators(m, variables, rounds, "X") + \
               add_nibble_indicators(m, variables, rounds - 1, "X")
         m.vars = ind
-        m.sequential_encoding_method(max_nib_pt)
+        m.sequential_encoding_method(max_nib_ct)
 
     return m, variables
 
@@ -257,17 +262,16 @@ def solve(m, variables, rounds, tag, timeout):
 
 
 # ==========================================================================
-# 暗号文側からの挿入
+# 識別子の挿入
 # ==========================================================================
-def insert_backward(trail, s):
+def insert_forward(trail, s):
     """
     順方向の特性 trail (t = 0..R) を, 攻撃の第 s 段から第 s+R 段に
-    暗号文側から挿入した形に変換する。
-        (ΔX^{s+R-t}, ΔY^{s+R-t}) = (ΔY^t, ΔX^t)
+    向きを変えずに挿入する。
+        (ΔX^{s+t}, ΔY^{s+t}) = (ΔX^t, ΔY^t)
     返り値: {攻撃ラウンド番号: (ΔX, ΔY)}
     """
-    R = len(trail) - 1
-    return {s + R - t: (dy, dx) for t, (dx, dy) in enumerate(trail)}
+    return {s + t: (dx, dy) for t, (dx, dy) in enumerate(trail)}
 
 
 def fmt(word):
@@ -292,10 +296,10 @@ def report(trail, rounds, rw, s, label):
     if sum(rw) != exact_total:
         print("!! SAT model and transfer matrix disagree")
 
-    ins = insert_backward(trail, s)
+    ins = insert_forward(trail, s)
     R = rounds
-    print(f"\n=== {label} : inserted from the ciphertext side, rounds {s}..{s+R} ===")
-    print("(chosen-ciphertext setting; halves are swapped, as in the CANDAR paper)")
+    print(f"\n=== {label} : inserted forward, rounds {s}..{s+R} ===")
+    print("(chosen-ciphertext setting; the pairing at the ciphertext side forces (a,b))")
     print(f"{'round':>5} {'dX^round':>17} {'dY^round':>17}  act(dX)  act(dY)")
     for a in range(s, s + R + 1):
         dx, dy = ins[a]
@@ -383,8 +387,8 @@ def required_mask(diff_word, ncols=16):
 
 def validate_against_paper():
     """
-    CANDAR 論文 (SAND-64) の Appendix A の数値でマスク算出を検証する。
-    ΔX^2 = 008C0000 に対し M_K1 = 8C008C8C, wt = 9 が得られるはず。
+    論文誌版の SAND-64 の付録 (17 段攻撃の必要丸鍵ビット) の数値で
+    マスク算出を検証する。ΔX^3 = 008C0000 に対し M_K2 = 8C008C8C, wt = 9。
     G0, G1 は SAND-64 と SAND-128 で同一なのでこの検証はそのまま通用する。
     """
     dep = derivative_support(0x4)
@@ -393,19 +397,22 @@ def validate_against_paper():
     assert m == 0x8C008C8C, f"{m:08X}"
     assert bin(m).count("1") == 9
     print("paper check: derivative_support(0x4) = {u3,u1,u0}  (3 bits)")
-    print(f"paper check: required_mask(dX2=008C0000) = {m:08X}, wt = {bin(m).count('1')}"
-          f"   -> matches M_K1 = 8C008C8C, wt 9")
+    print(f"paper check: required_mask(dX3=008C0000) = {m:08X}, wt = {bin(m).count('1')}"
+          f"   -> matches M_K2 = 8C008C8C, wt 9")
     return True
 
 
 def key_cost(trail, s):
     """
-    暗号文側から挿入したときの平文側境界について, 必要な丸鍵ビット数を見積る。
+    前向きに挿入したときの平文側境界について, 必要な丸鍵ビット数を見積る。
 
     論文と同じ構成 (平文側に 3 段, 暗号文側に 1 段) を想定する。識別子の先頭が
     攻撃の第 s 段なので, 検査すべき差分は攻撃側の ΔX^s と ΔX^{s-1} である。
+
+    これは 1 段ぶんの目安であり, 探索の目的関数に使う。論文 Appendix の
+    M_K0 / M_K1 を厳密に数えるのは keybits_sand128.key_bits() の方である。
     """
-    ins = insert_backward(trail, s)
+    ins = insert_forward(trail, s)
     dx_s, dy_s = ins[s]
 
     # 攻撃の第 s 段の差分を検査するために必要な X^{s-1} の座標
