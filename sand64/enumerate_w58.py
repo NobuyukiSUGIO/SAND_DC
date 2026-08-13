@@ -35,7 +35,7 @@ def _load(name, filename):
 
 
 sand = _load("sand64_model", "SAND-64_20260729.py")
-verifier = _load("sand64_verify", "verify_sand64_16R_candar.py")
+verifier = _load("sand64_verify", "transfer_matrix_sand64.py")
 
 
 class EnumModel(sand.SAND_64_SAT_Model):
