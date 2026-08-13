@@ -4,7 +4,13 @@ import shutil
 import sys
 import tempfile
 
-class SAND_64_SAT_Model():
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from common.cnf import CnfMixin
+from common.solver import SolverMixin
+from common.ssb import SSbMixin
+from common.tee import Tee
+
+class SAND_64_SAT_Model(SSbMixin, CnfMixin, SolverMixin):
     def __init__(self):
         self.clauses = []
         self.vars = []
@@ -14,107 +20,6 @@ class SAND_64_SAT_Model():
                               "build", "kissat")
         self.kissat_path = _built if os.path.exists(_built) else (shutil.which("kissat") or _built)
         self.aux_var_counter = 0  # 補助変数のカウンター
-
-    @staticmethod
-    def g0_value(x):
-        """G0 acting on a 4-bit value x (bit 3 = msb). Used only for verification."""
-        x3, x2, x1, x0 = (x >> 3) & 1, (x >> 2) & 1, (x >> 1) & 1, x & 1
-        y0 = (x3 & x2) ^ x0
-        y1 = x1
-        y2 = x2
-        y3 = (y0 & x1) ^ x3
-        return (y3 << 3) | (y2 << 2) | (y1 << 1) | y0
-
-    @staticmethod
-    def g1_value(x):
-        """G1 acting on a 4-bit value x (bit 3 = msb). Used only for verification."""
-        x3, x2, x1, x0 = (x >> 3) & 1, (x >> 2) & 1, (x >> 1) & 1, x & 1
-        y3 = x3
-        y2 = (x3 & x1) ^ x2
-        y1 = (y2 & x0) ^ x1
-        y0 = x0
-        return (y3 << 3) | (y2 << 2) | (y1 << 1) | y0
-
-    @classmethod
-    def ssb_joint_ddt(cls):
-        """
-        Differential distribution table of the 4x8 synthetic S-box
-
-            SSb(x) = G0(x) || G1(x),
-
-        i.e. ddt[din][(dG0 << 4) | dG1] counts the 4-bit values x with
-        G0(x) ^ G0(x ^ din) = dG0 and G1(x) ^ G1(x ^ din) = dG1 simultaneously.
-
-        G0 and G1 consume the *same* 4-bit input value, so their output
-        differences must not be drawn from two independent DDTs: the product of
-        the marginal DDTs admits 157 (din, dG0, dG1) triples whereas only 97 are
-        jointly realizable.
-        """
-        ddt = [[0] * 256 for _ in range(16)]
-        for din in range(16):
-            for x in range(16):
-                d0 = cls.g0_value(x) ^ cls.g0_value(x ^ din)
-                d1 = cls.g1_value(x) ^ cls.g1_value(x ^ din)
-                ddt[din][(d0 << 4) | d1] += 1
-        return ddt
-
-    def ssb_s_box(self, a0, a1, a2, a3, b0, b1, b2, b3, c0, c1, c2, c3, w1, w2, w3):
-        """
-        Joint differential constraint for the synthetic S-box SSb = (G0, G1).
-
-        Number of constraints: 58
-        Input:      a0||a1||a2||a3; a0: msb   (input difference of the shared nibble)
-        Output G0:  b0||b1||b2||b3; b0: msb
-        Output G1:  c0||c1||c2||c3; c0: msb
-        Weight:     w1 + w2 + w3, encoded in unary with w1 >= w2 >= w3.
-
-        The nonzero entries of the joint DDT are 2, 4 and 16, so the weight
-        -log2(Pr) of a valid transition is 3, 2 or 0; a weight of 1 never occurs
-        and is excluded by the clauses below.  The clause set was generated from
-        ssb_joint_ddt() and its models were exhaustively checked against the
-        table by verify_ssb_model().
-        """
-        return [[-a0,c0],[-a0,w2],[-a1,b1],[-a2,b2],[-a3,c3],[-b3,w2],[-c1,w1],[-c2,w1],[-w1,w2],[a0,-c0],[a1,-b1],[a2,-b2],[a3,-c3],[w1,-w2],[w1,-w3],[-c0,-c1,w3],[b2,c1,-w3],[-a0,b0,b2,b3],[-a2,-a3,c1,w3],[-a2,c1,c2,c3],[-b0,-c1,-c2,w3],[-b0,b2,b3,c0],[-b1,-b2,-c3,w3],[a1,b0,-c0,w3],[a2,-b1,c0,c1],[a3,-c0,-c2,w3],[b0,-b2,c2,w3],[b1,-b3,c0,c3],[b1,b3,-c1,w3],[b1,b3,c0,-c3],[b2,-b3,-c1,w3],[c0,c1,c3,-w3],[-a0,a2,b0,-b1,-c1],[-a1,-a3,-b3,c2,w3],[-a1,-b3,c0,c1,-w3],[-a1,b3,c0,-c1,-w3],[-a2,-b3,c0,-c1,c3],[-a3,b1,c0,-c1,-w3],[-b0,-b3,-c0,-c2,w3],[-b0,b1,b2,-b3,-c1],[-b1,b3,c1,-c2,w3],[a1,-a3,b3,c2,w3],[a1,b0,b2,b3,-w1],[a2,-b0,-b1,-b3,w3],[-a0,-b0,-b2,b3,c2,c3],[-a0,b0,b1,b3,-c1,-c2],[-a1,-a2,b3,-c0,c1,c2],[-a1,-b2,-b3,c1,-c2,-c3],[-a1,b0,-c0,-c1,-c2,c3],[-a3,b1,-b2,b3,c1,-c2],[-b0,b1,-b3,-c1,-c2,c3],[a1,-b3,-c0,c1,c2,-w3],[a1,a3,b0,-b2,-b3,c2],[b0,-b1,b3,-c0,c2,-c3],[-a0,-a1,-a2,-b0,-b3,-c1,c2],[-a0,b0,-b2,-b3,-c1,-c2,-c3],[-a1,-a2,-b0,b3,-c1,-c2,-c3],[-a2,-b0,b1,-c0,-c1,c2,-c3]]
-
-    def verify_ssb_model(self, verbose=True):
-        """
-        Exhaustively check that the models of ssb_s_box() are exactly the valid
-        (input difference, G0 output difference, G1 output difference, weight)
-        tuples of the joint DDT.  All 2^15 assignments of the 15 involved
-        variables are enumerated, so this is a proof, not a sample.
-        """
-        clauses = self.ssb_s_box(*range(1, 16))  # variables 1..15 in signature order
-        ddt = self.ssb_joint_ddt()
-
-        expected = set()
-        for din in range(16):
-            for dout, count in enumerate(ddt[din]):
-                if count == 0:
-                    continue
-                weight = 4 - count.bit_length() + 1
-                assert count == 1 << (count.bit_length() - 1), "non power-of-two DDT entry"
-                bits = []
-                for value in (din, (dout >> 4) & 0xF, dout & 0xF):
-                    bits += [(value >> 3) & 1, (value >> 2) & 1, (value >> 1) & 1, value & 1]
-                bits += [1 if k < weight else 0 for k in range(3)]
-                expected.add(tuple(bits))
-
-        models = set()
-        for code in range(1 << 15):
-            bits = [(code >> (14 - k)) & 1 for k in range(15)]
-            assign = {k + 1: bits[k] for k in range(15)}
-            if all(any(assign[abs(l)] == (1 if l > 0 else 0) for l in clause) for clause in clauses):
-                models.add(tuple(bits))
-
-        if models != expected:
-            raise AssertionError(
-                f"SSb CNF is not exact: {len(models - expected)} spurious and "
-                f"{len(expected - models)} missing assignments"
-            )
-        if verbose:
-            print(f"SSb joint-DDT model verified: {len(expected)} valid transitions, "
-                  f"{len(clauses)} clauses, all 2^15 assignments checked")
-        return True
 
 
     def generate_variables(self, num_rounds):
@@ -152,9 +57,6 @@ class SAND_64_SAT_Model():
 
         return variables
         
-    def rotate_left(self, data, bits):
-        """Rotate a list to the left by a given number of bits."""
-        return data[bits:] + data[:bits]
 
     def s_box_model(self, variables, round):
         """
@@ -334,42 +236,6 @@ class SAND_64_SAT_Model():
             for i in range(8):
                 output_bits[i+8*j] = input_bits[self.p_box[i]+8*j]
 
-    def xor_model(self, input1_bits, input2_bits, output_bits):
-        # For each bit position, model the XOR operation
-        for alpha, beta, gamma in zip(input1_bits, input2_bits, output_bits):
-            # If alpha and beta are both 0, then gamma should be 0
-            self.clauses.append([-alpha, -beta, -gamma])
-            # If alpha is 1 and beta is 0, then gamma should be 1
-            self.clauses.append([alpha, -beta, gamma])
-            # If alpha is 0 and beta is 1, then gamma should be 1
-            self.clauses.append([-alpha, beta, gamma])
-            # If alpha and beta are both 1, then gamma should be 0
-            self.clauses.append([alpha, beta, -gamma])
-
-    def branching_model(self, input_bits, output1_bits, output2_bits):
-        # input_bits: 入力ビットのリスト
-        # output1_bits: 出力ビットのリスト1
-        # output2_bits: 出力ビットのリスト2
-
-        # ブランチング操作のモデル化
-        for i in range(len(input_bits)):
-            # 入力ビットが1の場合、出力ビット1と出力ビット2の両方が1である必要がある
-            self.clauses.append([-input_bits[i], output1_bits[i]])
-            self.clauses.append([-input_bits[i], output2_bits[i]])
-
-            # 入力ビットが0の場合、出力ビット1と出力ビット2の両方が0である必要がある
-            self.clauses.append([input_bits[i], -output1_bits[i]])
-            self.clauses.append([input_bits[i], -output2_bits[i]])
-
-    def copy_model(self, input, output):
-        # input_bits: 入力ビット
-        # output_bits: 出力ビット
-
-        # 入力ビットが1の場合、出力ビットが1である必要がある
-        self.clauses.append([-input, output])
-
-        # 入力ビットが0の場合、出力ビットが0である必要がある
-        self.clauses.append([input, -output])
 
     def Search_Differential_Distingusher(self, num_rounds, num_bounds, variables):
         # Split the plaintext into two halves
@@ -465,73 +331,6 @@ class SAND_64_SAT_Model():
         # Make sequential_encording model
         self.sequential_encoding_method(num_bounds)
 
-    def write_cnf_to_file(self, filename):
-        """CNF式をDIMACS形式でファイルに書き込む"""
-        with open(filename, 'w') as f:
-            # ヘッダーを書き込む
-            num_vars = max(max(abs(lit) for lit in clause) for clause in self.clauses)
-            num_clauses = len(self.clauses)
-            f.write(f"p cnf {num_vars} {num_clauses}\n")
-            
-            # 各節を書き込む
-            for clause in self.clauses:
-                f.write(' '.join(map(str, clause)) + ' 0\n')
-
-    def solve_with_kissat(self, cnf_file):
-        """Kissatを使用してCNFを解く（時間制限なし）"""
-        try:
-            # Kissatを実行（時間制限を排除）
-            result = subprocess.run([self.kissat_path, cnf_file], 
-                                    capture_output=True, text=True)
-            
-            # 結果を解析
-            output = result.stdout
-            if "s SATISFIABLE" in output:
-                # モデルを抽出
-                model = []
-                for line in output.split('\n'):
-                    if line.startswith('v '):
-                        vars_str = line[2:].strip()
-                        for var in vars_str.split():
-                            if var == '0':
-                                break
-                            model.append(int(var))
-                return True, model
-            elif "s UNSATISFIABLE" in output:
-                return False, []
-            else:
-                print("Kissat output:")
-                print(output)
-                return False, []
-                
-        except Exception as e:
-            print(f"Error running Kissat: {e}")
-            return False, []
-
-    def solve(self):
-        # 一時ファイルを作成してCNFを書き込む
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.cnf', delete=False) as f:
-            temp_filename = f.name
-        
-        try:
-            # CNFをファイルに書き込む
-            self.write_cnf_to_file(temp_filename)
-            
-            # Kissatで解く
-            sat, model = self.solve_with_kissat(temp_filename)
-            
-            # モデルを正の値のみのリストに変換（pysat形式に合わせる）
-            if sat:
-                result_model = [var for var in model if var > 0]
-            else:
-                result_model = []
-                
-            return sat, result_model
-            
-        finally:
-            # 一時ファイルを削除
-            if os.path.exists(temp_filename):
-                os.remove(temp_filename)
 
     def print_characteristics_v2(self, num_rounds, result_model, variables):
         def get_bit(var): return '1' if var in result_model else '0'
@@ -715,18 +514,6 @@ class SAND_64_SAT_Model():
 #       main function      #
 #--------------------------#
 
-class Tee:
-    """標準出力への出力を results.txt にも同時に書き出すためのクラス"""
-    def __init__(self, *streams):
-        self.streams = streams
-
-    def write(self, data):
-        for stream in self.streams:
-            stream.write(data)
-
-    def flush(self):
-        for stream in self.streams:
-            stream.flush()
 
 if __name__ == "__main__":
     model = SAND_64_SAT_Model()

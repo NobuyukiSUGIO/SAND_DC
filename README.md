@@ -44,14 +44,23 @@ against the table.
 ## Layout
 
 ```
+common/    shared by both variants: the SSb layer, CNF construction, Kissat
 sand64/    SAND-64:  SAT model, enumeration, 17-round key recovery
 sand128/   SAND-128: SAT model, enumeration, 23-round key recovery
 build/     Kissat binary (not tracked; see Requirements)
+tests/     CNF fingerprint regression test
 ```
 
-Each variant directory is self-contained and keeps its own `results/`. All
-scripts locate their data relative to their own file, so they can be run from
-any working directory.
+Each variant directory keeps its own `results/`, and all scripts locate their
+data relative to their own file, so they can be run from any working directory.
+
+`common/` holds what does not depend on the block size. SSb is the same 4-bit
+map in both variants, so its joint DDT, the 58-clause CNF encoding of that DDT,
+and the exhaustive $2^{15}$ proof of the encoding's exactness exist once
+(`common/ssb.py`) rather than in two copies. The same goes for the CNF
+primitives (`common/cnf.py`) and the solver interface (`common/solver.py`). The
+two model classes mix these in and supply what is variant-specific: the state
+layout, $p_n$, the number of parallel S-boxes, and the search drivers.
 
 ## Requirements
 
