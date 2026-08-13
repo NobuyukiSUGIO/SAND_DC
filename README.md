@@ -92,6 +92,7 @@ implementations agree.
 | 19-round characteristic, SAND-128 | `python3 sand128/enumerate_sand128.py 19 120` | `sand128/results/trails_sand128_r19_w120.txt` |
 | Key-free filters (Eq. 9–12) | `python3 sand128/filters_sand128.py validate` | |
 | Guessed round-key bits $k$ | `python3 sand128/keybits_sand128.py` | |
+| **All numbers of the 23-round attack** | `python3 sand128/attack_numbers.py` | |
 | Threshold $\tau$ and success probability | `python3 sand128/success_probability_sand128.py` | |
 | Maximum attackable rounds (Discussion) | `python3 sand128/maximize_rounds.py` | |
 
@@ -176,7 +177,7 @@ of them was re-checked by the transfer-matrix computation.
 | `keyrecovery_sand128.py` | Characteristic search under the key-recovery constraints |
 | `filters_sand128.py` | Key-free filter conditions by truncated-difference propagation |
 | `keybits_sand128.py` | Exact count of the guessed round-key bits $k$ |
-| `attack_numbers.py` | Complexity arithmetic for the key-recovery attack |
+| `attack_numbers.py` | **Derives every number of the 23-round attack** from the characteristic data and checks it against the paper |
 | `maximize_rounds.py` | Maximizes $r_{in} + R + r_{out}$ under the key-size constraint |
 | `success_probability_sand128.py` | Threshold $\tau$ and success probability of the counting phase |
 | `verify_sand128_key_recovery.py` | **Independent verification of the 23-round attack** |
