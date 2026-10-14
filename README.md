@@ -120,6 +120,45 @@ Note that the sub-slice partition is only a means of parallelisation: whatever
 it produces, the final answer is accepted only once the partition-independent
 completeness check passes.
 
+## Key-recovery experiments (Section V-C of the paper)
+
+The directory `experiments/` contains the experiments that validate the
+chosen-ciphertext key-recovery attack on 16-round SAND-64. Both scripts are
+self-contained (they re-implement SAND-64 and do not import the search code)
+and require Python 3 with **NumPy**.
+
+```
+cd experiments
+python3 cc_check.py      # about 2.5 minutes
+python3 cc_random16.py   # about 1.5 minutes
+```
+
+`cc_check.py` runs an 8-round version of the attack with independent random
+round keys. It keeps the three key-recovery rounds (guessing
+`sk^0 & DFDFDFDF` and `sk^1 & 8C008C8C`) and the swap-free last round of the
+16-round attack, and replaces the 12-round characteristic by the 4-round
+characteristic
+`(dx3,dy3) = (00900000,008C0000) -> (dx7,dy7) = (00900000,00010000)`
+(weight 8; the last four rounds of the 12-round characteristic read in the
+encryption direction, identical to rounds 3-6 of the 16-round attack).
+Ciphertext pairs are chosen as in Step 1 of the attack. It checks
+
+* that the chosen ciphertext pairs give the difference `(dx7,dy7)`,
+* that every right pair passes the two plaintext-side filters and is counted
+  by the right key class,
+* that the test depends only on the 37 guessed key bits, and
+* the fraction of right pairs counted by wrong key classes close to the right
+  one, from which the expected number of wrong classes reaching the threshold
+  `tau = 16` and the probability that the right class is not ranked first are
+  derived for `lambda = 32` right pairs.
+
+`cc_random16.py` decrypts `2^26` chosen-ciphertext pairs through 16 rounds and
+measures the pass rates of the two filters (random-difference heuristic).
+
+The outputs obtained for the paper are stored in
+`experiments/cc_check_output.txt` and `experiments/cc_random16_output.txt`;
+the scripts use a fixed seed and reproduce them exactly.
+
 ## Files
 
 | File | Role |
@@ -138,6 +177,9 @@ completeness check passes.
 | `results/characteristic_13r_w64.txt` | An optimal 13-round characteristic. |
 | `results/weight_vectors_58.json` | The four realizable round-weight vectors. |
 | `results/results_w58_summary.txt` | Summary of the enumeration (in Japanese). |
+| `experiments/cc_check.py` | 8-round experiment of the chosen-ciphertext key-recovery attack (Section V-C). |
+| `experiments/cc_random16.py` | Filter pass rates on 16 rounds (random-difference heuristic). |
+| `experiments/*_output.txt` | Outputs of the two experiments reported in the paper. |
 
 ## File format
 
