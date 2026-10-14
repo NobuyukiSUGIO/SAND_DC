@@ -155,9 +155,25 @@ Ciphertext pairs are chosen as in Step 1 of the attack. It checks
 `cc_random16.py` decrypts `2^26` chosen-ciphertext pairs through 16 rounds and
 measures the pass rates of the two filters (random-difference heuristic).
 
+`derive_masks.py` (standard library only, runs in about one second) derives,
+by exhaustive enumeration over the 4-bit SSb columns, i.e. without sampling,
+the values used in the paper and checks them against it:
+
+* the 97 jointly realizable SSb transitions vs. the 157 admitted by the
+  product of the marginal DDTs (Section V-A),
+* the filter masks `81311081 / 00110000` and `B9FF37B9 / 001E0000`
+  (Eqs. (5), (6)),
+* the key masks `M^(1) = DECE5EDE`, `M^(2) = D9D9D9D9`,
+  `M_K0 = DFDFDFDF` and `M_K1 = 8C008C8C` (Appendix), and
+* the numbers of Section V-C (`lambda_right = 32`, `2^31` surviving pairs,
+  `2^-39.6` wrong classes reaching `tau`, success probability, time and
+  memory complexities, and the comparison with the 15-round rectangle
+  attack).
+
 The outputs obtained for the paper are stored in
-`experiments/cc_check_output.txt` and `experiments/cc_random16_output.txt`;
-the scripts use a fixed seed and reproduce them exactly.
+`experiments/cc_check_output.txt`, `experiments/cc_random16_output.txt` and
+`experiments/derive_masks_output.txt`; the scripts use fixed seeds and
+reproduce them exactly.
 
 ## Files
 
@@ -179,7 +195,8 @@ the scripts use a fixed seed and reproduce them exactly.
 | `results/results_w58_summary.txt` | Summary of the enumeration (in Japanese). |
 | `experiments/cc_check.py` | 8-round experiment of the chosen-ciphertext key-recovery attack (Section V-C). |
 | `experiments/cc_random16.py` | Filter pass rates on 16 rounds (random-difference heuristic). |
-| `experiments/*_output.txt` | Outputs of the two experiments reported in the paper. |
+| `experiments/derive_masks.py` | Exact derivation of the filter masks, key masks and numbers of the attack. |
+| `experiments/*_output.txt` | Outputs of the three scripts reported in the paper. |
 
 ## File format
 

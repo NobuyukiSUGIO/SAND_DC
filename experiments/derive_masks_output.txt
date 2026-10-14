@@ -1,0 +1,16 @@
+[0] column model of f agrees with the word-level specification (20000 inputs)
+[1] SSb transitions: joint 97, product of marginals 157
+[2] dx1 = 00900000 ^ D_(008C0000) f(x2): 216 values, fixed bits mask B9FF37B9 value 001E0000  (Eq. (6): B9FF37B9 / 001E0000)
+    dx0 = 008C0000 ^ D_(dx1) f(x1): fixed bits mask 81311081 value 00110000  (Eq. (5): 81311081 / 00110000)
+    Hamming weights 8 and 23
+[3] M^(1) (sk0 bits for testing dx2 = 008C0000): DECE5EDE  (paper: DECE5EDE)
+    x2 bits needed for the test of dx3: 8C008C8C -> M_K1 = 8C008C8C  (paper: 8C008C8C), weight 9
+    M^(2) (sk0 bits for the coordinates of x2): D9D9D9D9  (paper: D9D9D9D9)
+    M_K0 = M^(1) | M^(2) = DFDFDFDF  (paper: DFDFDFDF), weight 28; total 37 guessed bits
+[4] lambda_right = 2^62 * 2^-57 = 32;  surviving pairs 2^31;  lambda_wrong = 2^-2
+    Pr[Pois(32) >= 16] = 0.99934;  (2^37-1) Pr[Pois(2^-2) >= 16] = 2^-39.6
+    T = 2^91.0000;  worst case 27 * 2^91 = 2^95.75
+    M = 2^37 + 2 * 2^31 * 64/8 = 2^37.32 bytes
+    rectangle: s = N^2 2^-65 P with N = 2^55, P = 2^-43.23 -> s = 3.41;  N <= 2^63 -> P >= s 2^-61 = 2^-60;  margin 2^-16.77
+
+ALL VALUES AGREE WITH THE PAPER
