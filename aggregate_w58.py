@@ -22,9 +22,9 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 
 spec = importlib.util.spec_from_file_location(
-    "sand64_verify", os.path.join(HERE, "verify_sand64_16R_candar.py"))
+    "transfer_matrix", os.path.join(HERE, "transfer_matrix.py"))
 V = importlib.util.module_from_spec(spec)
-sys.modules["sand64_verify"] = V
+sys.modules["transfer_matrix"] = V
 spec.loader.exec_module(V)
 
 NUM_ROUNDS = 12

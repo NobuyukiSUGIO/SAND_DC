@@ -164,7 +164,7 @@ the scripts use a fixed seed and reproduce them exactly.
 | File | Role |
 | --- | --- |
 | `SAND-64_20260729.py` | SAT model of SAND-64 (joint SSb DDT, cardinality constraints, Kissat interface). Running it directly performs a single bounded search. |
-| `verify_sand64_16R_candar.py` | Exact transfer-matrix computation of round-transition counts, independent of the SAT model. |
+| `transfer_matrix.py` | Exact transfer-matrix computation of round-transition counts, independent of the SAT model (used by the verification and aggregation scripts). |
 | `trail_io.py` | Reader/writer for the characteristic file format. |
 | `verify_characteristics.py` | **Standalone verification of the published characteristics.** |
 | `completeness_check.py` | **Proof that the 12-round list is complete** (single UNSAT call). |
