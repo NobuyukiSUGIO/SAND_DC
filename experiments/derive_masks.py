@@ -228,10 +228,10 @@ T = 2 * 2 / 16 * 2**62 + 2 / 16 * 2**54 + 2 * 2 / 16 * 2**31 * 2**37 + 2**91
 print(f"    T = 2^{math.log2(T):.4f};  worst case 27 * 2^91 = 2^{math.log2(27 * 2**91):.2f}")
 M = 2**37 + 2 * 2**31 * 64 / 8
 print(f"    M = 2^37 + 2 * 2^31 * 64/8 = 2^{math.log2(M):.2f} bytes")
-s = 2
+s = 2**110 * 2**-65 * 2**-43.23          # right quartets of the 15-round attack
 Pmin = s * 2.0**-61
-print(f"    rectangle: s = N^2 2^-65 P with N = 2^55, P = 2^-43.23 -> s = {2**110 * 2**-65 * 2**-43.23:.2f};"
-      f"  N <= 2^63 -> P >= s 2^-61 = 2^{math.log2(Pmin):g};"
+print(f"    rectangle: s = N^2 2^-65 P with N = 2^55, P = 2^-43.23 -> s = {s:.2f};"
+      f"  N <= 2^63 -> P >= s 2^-61 = 2^{math.log2(Pmin):.2f};"
       f"  margin 2^{math.log2(Pmin) + 43.23:.2f}")
 
 ok = (len(joint), len(marg)) == (97, 157) and (m1_mask, m1_val) == (0xB9FF37B9, 0x001E0000) \

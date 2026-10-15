@@ -11,6 +11,6 @@
     Pr[Pois(32) >= 16] = 0.99934;  (2^37-1) Pr[Pois(2^-2) >= 16] = 2^-39.6
     T = 2^91.0000;  worst case 27 * 2^91 = 2^95.75
     M = 2^37 + 2 * 2^31 * 64/8 = 2^37.32 bytes
-    rectangle: s = N^2 2^-65 P with N = 2^55, P = 2^-43.23 -> s = 3.41;  N <= 2^63 -> P >= s 2^-61 = 2^-60;  margin 2^-16.77
+    rectangle: s = N^2 2^-65 P with N = 2^55, P = 2^-43.23 -> s = 3.41;  N <= 2^63 -> P >= s 2^-61 = 2^-59.23;  margin 2^-16.00
 
 ALL VALUES AGREE WITH THE PAPER
