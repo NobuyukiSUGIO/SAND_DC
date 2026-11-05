@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 """
 Independent verification of the 23-round key-recovery attack on SAND-128
-described in paper/SAND_DC_IEICE/main.tex (2^126 chosen ciphertexts version).
+described in paper/SAND_DC_JISA/main.tex (2^126 chosen ciphertexts version).
 
 Nothing in this file imports the author's modules for the cryptographic
 primitives; SAND-128 is re-implemented from the specification given in
-Section IV of the paper (row-wise state, column = SSb nibble).
+Section 5 of the paper (row-wise state, column = SSb nibble).
 The author's modules are imported only at the very end to cross-check that
 the two independent implementations agree.
 """
@@ -169,7 +169,7 @@ check("DDT_SSb[0x6][0x62] = 0 (paper's example)", DDT[0x6][0x62] == 0)
 
 print()
 print("=" * 78)
-print("1.  the 19-round characteristic of Table VI")
+print("1.  the 19-round characteristic of Table 11")
 print("=" * 78)
 TRAIL = [
     (0x0000000000001115, 0x000000000000CC0C),
@@ -296,8 +296,8 @@ check("(dX^3,dY^3) = the trail input (dX^0,dY^0), forward insertion",
 
 M0, V0 = 0x2A226C5464443F33, 0x0000000000000033
 M1, V1 = 0xFCCCFFFFB9D9FFFF, 0x0000000000005400
-check("wt(mask of Eq.(9)) = 27", bin(M0).count("1") == 27, str(bin(M0).count("1")))
-check("wt(mask of Eq.(10)) = 52", bin(M1).count("1") == 52, str(bin(M1).count("1")))
+check("wt(mask of Eq.(13)) = 27", bin(M0).count("1") == 27, str(bin(M0).count("1")))
+check("wt(mask of Eq.(14)) = 52", bin(M1).count("1") == 52, str(bin(M1).count("1")))
 check("required values are submasks of their masks", (V0 & ~M0) == 0 and (V1 & ~M1) == 0)
 
 # every pair that reaches (dX^3,dY^3) must satisfy both filters
@@ -325,19 +325,19 @@ for _ in range(TRIALS):
     or0 |= dX0
     and1 &= dX1
     or1 |= dX1
-check(f"filter Eq.(11) holds for all {TRIALS} random right pairs", (and0 & M0) == V0 and f_ok)
-check(f"filter Eq.(12) holds for all {TRIALS} random right pairs", (and1 & M1) == V1)
+check(f"filter Eq.(13) holds for all {TRIALS} random right pairs", (and0 & M0) == V0 and f_ok)
+check(f"filter Eq.(14) holds for all {TRIALS} random right pairs", (and1 & M1) == V1)
 # tightness: the observed constant bits are exactly the claimed masks
 obs0 = ~(and0 ^ or0) & MASK64
 obs1 = ~(and1 ^ or1) & MASK64
-check("Eq.(11) mask is not weaker than what is observed", (M0 & ~obs0) == 0,
+check("Eq.(13) mask is not weaker than what is observed", (M0 & ~obs0) == 0,
       f"observed constant bits {bin(obs0).count('1')}, claimed {bin(M0).count('1')}")
-check("Eq.(12) mask is not weaker than what is observed", (M1 & ~obs1) == 0,
+check("Eq.(14) mask is not weaker than what is observed", (M1 & ~obs1) == 0,
       f"observed constant bits {bin(obs1).count('1')}, claimed {bin(M1).count('1')}")
 
 print()
 print("=" * 78)
-print("4.  column numbering of Section V and the appendix column sets")
+print("4.  column numbering of Section 5 and the appendix column sets")
 print("=" * 78)
 # The paper numbers the columns of the 4 x n/4 array from the RIGHT: column j is
 # the j-th nibble x[j] = (x_{4j+3}, x_{4j+2}, x_{4j+1}, x_{4j}) of the n-bit
@@ -367,7 +367,7 @@ def uncols_lsb(c, ncol=16):
 
 
 def load(Pl, ncol=16):
-    """state loading of Section V: row x{3-k}[j] = Pl_{4j+k}."""
+    """state loading of Section 5: row x{3-k}[j] = Pl_{4j+k}."""
     rows = [0] * 4
     for j in range(ncol):
         for k in range(4):                       # k = 3 -> row x{3}
@@ -381,24 +381,24 @@ def load(Pl, ncol=16):
 
 check("cols_lsb / uncols_lsb round-trip",
       all(uncols_lsb(cols_lsb(w)) == w for w in [rnd64() for _ in range(300)]))
-# Section V: column j of the loaded array is the j-th nibble of the plaintext word
+# Section 5: column j of the loaded array is the j-th nibble of the plaintext word
 sec5_ok = True
 for _ in range(300):
     Pl = rnd64()
     c = cols_lsb(load(Pl))
     sec5_ok &= all(c[j] == ((Pl >> (4 * j)) & 0xF) for j in range(16))
-check("Sect. V: column j of the array is the nibble x[j] = (x_{4j+3}..x_{4j})", sec5_ok)
+check("Sect. 5.1: column j of the array is the nibble x[j] = (x_{4j+3}..x_{4j})", sec5_ok)
 check("paper column j = implementation column n/4-1-j",
       all(cols_lsb(w) == cols(w)[::-1] for w in [rnd64() for _ in range(300)]))
 
-# Sect. VI-A: in the paper's numbering, x[j] feeds N_0 at column j and N_1 at
+# Sect. 6.1: in the paper's numbering, x[j] feeds N_0 at column j and N_1 at
 # column j+1, i.e. output column j collects G0(col j) and G1(col j-1)
 def F_lsb(x):
     c = cols_lsb(x)
     return P(uncols_lsb([G0(c[j]) ^ G1(c[(j - 1) % 16]) for j in range(16)]))
 
 
-check("Sect. VI-A: 'x[j] feeds the (j+1)-th SSb of G_1' reproduces f exactly",
+check("Sect. 6.1: 'x[j] feeds the (j+1)-th SSb of G_1' reproduces f exactly",
       all(F_lsb(w) == F(w) for w in [rnd64() for _ in range(300)] + [0, MASK64, 1]))
 
 # --- the two appendix column sets, in the paper's numbering ---
@@ -571,17 +571,42 @@ check("correct partial key is the unique maximum counter",
       winners == [correct],
       f"max = {best} (of 32 planted right pairs), #ties = {len(winners)}, "
       f"best wrong counter = {others[-1]}")
-# Note on the threshold: the paper's tau = 14 is calibrated against the
-# wrong-key randomisation hypothesis, in which a wrong class collects
-# Poisson(2^-3) counts. It must not be applied to this sub-window, whose keys
-# differ from the correct one in a few bits only and are therefore *not*
-# independent wrong classes: on a planted right pair a differing bit is often
-# inert, so near-correct window keys score far above 2^-3. The ranking test
-# above is the meaningful one at this scale; the Poisson calibration itself is
-# checked arithmetically in section 6.
+# The keys of this sub-window differ from the correct one in a few bits only
+# and are therefore *not* independent wrong classes: on a planted right pair a
+# differing bit is often inert, so near-correct window keys score far above
+# 2^-3. Section 7.3.3 of the paper accounts for these nearby classes; the
+# construction it gives is checked next, and their number is measured by
+# nearby/nearby_classes.py.
 print(f"       counters of the 2^{len(SUBBITS)} window keys: correct = "
       f"{counters[correct]}, best wrong = {others[-1]}, median = "
       f"{others[len(others) // 2]}")
+
+
+# --- the A_j / B_j construction of Section 7.3.3 ---
+# sk^1_{A_j} = sk^1 ^ e_{3,j},  sk^1_{B_j} = sk^1 ^ e_{3,j} ^ e_{2,j}, sk^0 correct.
+# Every pair counted by the correct class is counted by exactly one of them,
+# according to u_1 = x^2{1}_j, so c_A + c_B >= c_*.
+J2 = [15, 14, 11, 10, 3, 2]
+e = lambda i, j: 1 << (16 * i + j)
+ab_ok = True
+n_right = 0
+for (X0, Y0, X0s, Y0s, fx, fxs) in pre:
+    X1, X1s = Y0 ^ fx ^ sk0, Y0s ^ fxs ^ sk0
+    def counted(g1):
+        X2, X2s = X0 ^ F(X1) ^ g1, X0s ^ F(X1s) ^ g1
+        return (X2 ^ X2s) == DX2 and ((X1 ^ X1s) ^ F(X2) ^ F(X2s)) == DX3
+    if not counted(sk1):
+        continue
+    n_right += 1
+    X2 = X0 ^ F(X1) ^ sk1
+    for j in J2:
+        a = counted(sk1 ^ e(3, j))
+        b = counted(sk1 ^ e(3, j) ^ e(2, j))
+        u1 = (X2 >> (16 * 1 + j)) & 1
+        ab_ok &= (a != b) and (a == (u1 == 0))
+check("every pair of the correct class is counted by exactly one of A_j, B_j "
+      "(A_j iff u_1 = 0), for all six columns", ab_ok and n_right >= 32,
+      f"{n_right} pairs x 6 columns")
 
 print()
 print("=" * 78)
@@ -594,12 +619,16 @@ f0, f1 = 27, 52
 k = 72
 rounds = 23
 TAU = 14
-E_WRONG = -6.5                                   # log2 E[# wrong classes kept]
+E_BG = -6.5                                      # log2 E[# background classes kept]
+sys.path.insert(0, os.path.dirname(HERE))
+from common.counting import load_nearby
+_near = load_nearby(128)
+E_NEAR = max(v[TAU] for v in _near.values()) if _near else None   # nearby classes kept
 print(f"  pairs                  2^{N}")
 print(f"  chosen ciphertexts     2^{N+1}   (involution -> 2 texts per pair)")
 print(f"  right pairs            2^{N-W} = {2**(N-W)}")
-print(f"  after Eq.(11)          2^{N-f0}")
-print(f"  after Eq.(12)          2^{N-f0-f1}")
+print(f"  after Eq.(13)          2^{N-f0}")
+print(f"  after Eq.(14)          2^{N-f0-f1}")
 print(f"  wrong class expectation 2^{N-128}")
 # staged early abort: the residual conditions are 37 bits (dX^2) and 12 (dX^3)
 resid2, resid3 = 128 - f0 - f1 - 12, 12
@@ -618,21 +647,28 @@ t_data = u + (N + 1)                             # 2 * 2^N  (Steps 1 and 2)
 t_dx1 = u + (N - f0)                             # Step 3
 t_st1 = u + sA                                   # Stage 1
 t_st2 = u + sB                                   # Stage 2
-t_fin = max(E_WRONG, 0.0) + (128 - k)            # Step 5, tau = 14 keeps only the right class
+# Step 5 searches every retained class: the correct one, the background ones
+# and the nearby ones (measured; see nearby/nearby_classes.py)
+t_fin = math.log2(1 + 2**E_BG + (E_NEAR or 0.0)) + (128 - k)
 T = math.log2(2**t_data + 2**t_dx1 + 2**t_st1 + 2**t_st2 + 2**t_fin)
-T_kr = math.log2(2**t_dx1 + 2**t_st1 + 2**t_st2 + 2**t_fin)
+T_data = math.log2(2**t_data + 2**t_dx1)                # Steps 1-3, key-independent
+T_key = math.log2(2**t_st1 + 2**t_st2 + 2**t_fin)      # Steps 4 and 5
 # key-outer loop: no counter array and, at tau = 14, no list of retained classes
 M = math.log2(2 * 2 ** (N - f0 - f1) * 16)
 no_abort = math.log2(4 / rounds) + (N - f0 - f1) + k
 print(f"  Steps 1,2 2^{t_data:.2f} | Step 3 2^{t_dx1:.2f} | Stage 1 2^{t_st1:.2f}"
       f" | Stage 2 2^{t_st2:.2f} | Step 5 2^{t_fin:.2f}")
 print(f"  T      = 2^{T:.2f}    (paper 2^122.5)")
-print(f"  T_kr   = 2^{T_kr:.2f}     (paper 2^94.5)")
+print(f"  T_data = 2^{T_data:.2f}    (paper 2^122.5)")
+print(f"  T_key  = 2^{T_key:.2f}     (paper 2^78.5; final stage 2^{t_fin:.1f}, paper 2^67.2)")
 print(f"  M      = 2^{M:.2f} bytes  (paper 2^51)")
 print(f"  merged stages, no early abort = 2^{no_abort:.2f}  (paper 2^115.5), "
       f"still below Steps 1,2 by 2^{t_data - no_abort:.1f}")
 check("total time matches the paper", abs(T - 122.5) < 0.1, f"2^{T:.2f}")
-check("key-recovery time matches the paper", abs(T_kr - 94.5) < 0.1, f"2^{T_kr:.2f}")
+check("T_data matches the paper", abs(T_data - 122.5) < 0.1, f"2^{T_data:.2f}")
+check("T_key matches the paper", abs(T_key - 78.5) < 0.1, f"2^{T_key:.2f}")
+check("nearby-class measurement found (nearby/results/*.json)", E_NEAR is not None)
+check("final stage matches the paper (2^67.2)", abs(t_fin - 67.2) < 0.15, f"2^{t_fin:.2f}")
 check("memory matches the paper", abs(M - 51) < 0.1, f"2^{M:.2f}")
 check("no-early-abort figure matches the paper", abs(no_abort - 115.5) < 0.1,
       f"2^{no_abort:.2f}")
@@ -659,11 +695,13 @@ print()
 print("  Poisson model: E[C_right] = 2^%d = %d, E[C_wrong] = 2^%d = %.4f"
       % (N - W, int(lam_r), N - 128, lam_w))
 print(f"  Pr[C_right >= {TAU}] = {p_succ:.5f}   (paper 0.99988)")
-print(f"  E[# wrong classes >= {TAU}] = 2^{log_p_w + k:.1f}   (paper 2^-6.5)")
+print(f"  E[# background classes >= {TAU}] = 2^{log_p_w + k:.1f}   (paper 2^-6.5)")
+print(f"  E[# nearby classes >= {TAU}]     = {E_NEAR}   (paper 2.0e3 .. 2.4e3)")
 check("success probability matches the paper", abs(p_succ - 0.99988) < 1e-4,
       f"{p_succ:.5f}")
-check("no wrong class is expected to survive the threshold", log_p_w + k < 0,
-      f"2^{log_p_w + k:.1f}")
+check("background classes alone stay below one", log_p_w + k < 0, f"2^{log_p_w + k:.1f}")
+check("nearby classes: 2.0e3 <= E <= 2.4e3 at tau = 14 (paper)",
+      E_NEAR is not None and 1.9e3 <= E_NEAR <= 2.5e3, f"{E_NEAR}")
 
 print()
 print("=" * 78)
@@ -675,7 +713,7 @@ print("=" * 78)
 # printed relation is transcribed literally, evaluated, and required to
 # reproduce the true cipher, and the erroneous variant is required to fail.
 
-# --- 8a. the round recurrence of Stage 1 / Stage 2 and of Eq. (A.1) ---
+# --- 8a. the round recurrence of Stage 1 / Stage 2 and of Eq. (A.2) ---
 # printed:  dX^c = dX^{c-2} XOR D_{dX^{c-1}} f(X^{c-1})
 # rejected: dX^c = dX^{c-2} XOR P_n( D_{dX^{c-1}} f(X^{c-1}) )   (P_n twice)
 def printed_next_diff(dX_prev2, X_prev1, X_prev1s):
@@ -707,7 +745,7 @@ check("printed recurrence dX^c = dX^(c-2) XOR D f(X^(c-1)) reproduces the cipher
 check("the discarded variant with an extra P_n does NOT reproduce the cipher",
       variant_rejected, "guards against re-introducing the double P_n")
 
-# --- 8b. the transfer-matrix relation of Section VII-B-3 ---
+# --- 8b. the transfer-matrix relation of Section 7.2.3 ---
 # printed:  T[j] = d_{0,j} XOR d_{1,(j-1) mod n/4}   with LSB-first columns
 # rejected: T[j] = d_{0,j} XOR d_{1,j+1}
 def transitions_feasible(shift):
@@ -739,16 +777,17 @@ check("the opposite index does not", feasible_wrong < 19,
       "guards against re-introducing the MSB-first form")
 
 # --- 8c. the source file still carries the corrected wording ---
-TEX = os.path.join(HERE, "..", "..", "paper", "SAND_DC_IEICE", "main.tex")
+TEX = os.path.join(HERE, "..", "..", "paper", "SAND_DC_JISA", "main.tex")
 if os.path.exists(TEX):
     tex = open(TEX, encoding="utf-8", errors="replace").read()
     banned = {
         r"P_n\!\left(D_{\Delta": "double application of P_n",
         r"d_{1,j+1}": "MSB-first transfer-matrix index",
         "leave no wrong class behind": "expectation stated as a guarantee",
+        "class alone in all but": "background-only count of retained classes",
     }
     hits = [why for pat, why in banned.items() if pat in tex]
-    check("main.tex is free of the three corrected defects", not hits,
+    check("main.tex is free of the four corrected defects", not hits,
           "; ".join(hits) if hits else "none present")
     required = [r"d_{1,(j-1)\bmod\frac{n}{4}}"]
     check("main.tex carries the corrected transfer-matrix index",

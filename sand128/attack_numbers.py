@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-論文誌版 (paper/SAND_DC_IEICE) の SAND-128 23 段鍵回復攻撃の数値を,
+論文誌版 (paper/SAND_DC_JISA) の SAND-128 23 段鍵回復攻撃の数値を,
 特性データから導出して確定させる。
 
 構成:
@@ -17,7 +17,16 @@
 条件になる。
 
 導出した数値は verify_sand128_key_recovery.py (仕様から書き起こした独立実装)
-および論文の Table 13 と一致することを最後に検査する。
+および論文 (Section 7.3.3, Table 3, Table 13, Appendix B) と一致することを
+最後に検査する。
+
+時間の区分 (Section 7.3.3):
+    T_data = Steps 1-3 (鍵に依存しないデータ処理)            ~ 2^122.5
+    T_key  = Step 4 の 2 段階 + Step 5 (残った全クラスの全数探索) ~ 2^78.5
+Step 3 は鍵推測の前に一度だけ行うので T_data 側に入る (旧版の T_kr = 2^94.5
+は Step 3 を鍵回復側に数えていた)。Step 5 は閾値を越えた誤りクラスも全て
+探索するため (1 + E[N_wrong]) 2^56 であり, E[N_wrong] には近接クラス
+(nearby/nearby_classes.py の測定値) を含める。
 """
 import math
 import os
@@ -29,6 +38,8 @@ sys.path.insert(0, HERE)
 import keyrecovery_sand128 as K
 import filters_sand128 as F
 import keybits_sand128 as KB
+sys.path.insert(0, os.path.dirname(HERE))
+from common.counting import load_nearby
 
 R = 19                  # 識別子の段数
 R_IN = 3                # 平文側に付ける段数
@@ -38,14 +49,15 @@ N_PAIRS = 125           # log2 の対数。E[C_right] = 2^5 = 32 となり閾値
 BLOCK = 128
 KEYLEN = 128
 NCOLS = 16
-TAU = 14                # カウンタの閾値 (論文 Section V)
+TAU = 14                # カウンタの閾値 (論文 Section 7.3.3)
 STAGE1_BITS = 35        # wt(M_K0^(1)): 第 1 段階で推測する sk^0 のビット数 (Appendix)
 RESID3 = 12             # ΔX^3 に残る条件のビット数 (第 2 段階で消費する)
-LOG_E_WRONG = -6.5      # log2 E[閾値を越える誤鍵クラス数]
+LOG_E_BG = -6.5         # log2 E[閾値を越える背景クラス数] (wrong-key randomization)
 
-# 論文 Table 13 および Appendix の公表値
+# 論文 Section 7.3.3, Table 13 および Appendix B の公表値
 PAPER = dict(f0=27, f1=52, k=72, M_K0=54, M_K1=18,
-             data=126, T=122.5, T_kr=94.5, mem=51.0, p_succ=0.99988)
+             data=126, T=122.5, T_data=122.5, T_key=78.5, mem=51.0, p_succ=0.99988,
+             t_fin=67.2)
 PAPER_TRAIL_IN = (0x0000000000001115, 0x000000000000CC0C)
 PAPER_TRAIL_OUT = (0x000000000000C0CC, 0x0000000000000510)
 
@@ -166,9 +178,14 @@ def main():
     t_dx1 = u + (N - f0)                    # Step 3     : ΔX^1 の再計算
     t_st1 = u + sA                          # Stage 1
     t_st2 = u + sB                          # Stage 2
-    t_fin = max(LOG_E_WRONG, 0.0) + (KEYLEN - k)    # Step 5 : 残る鍵の全数探索
+    # Step 5 : 残った全クラスの全数探索。近接クラスは測定値の最大を使う
+    nearby = load_nearby(128)
+    e_near = max(v[TAU] for v in nearby.values()) if nearby else float("nan")
+    e_wrong = 2 ** LOG_E_BG + e_near
+    t_fin = math.log2(1 + e_wrong) + (KEYLEN - k)
     T = math.log2(2 ** t_data + 2 ** t_dx1 + 2 ** t_st1 + 2 ** t_st2 + 2 ** t_fin)
-    T_kr = math.log2(2 ** t_dx1 + 2 ** t_st1 + 2 ** t_st2 + 2 ** t_fin)
+    T_data = math.log2(2 ** t_data + 2 ** t_dx1)
+    T_key = math.log2(2 ** t_st1 + 2 ** t_st2 + 2 ** t_fin)
     mem = math.log2(2 * 2 ** (N - f0 - f1) * 16)    # 対あたり 2 テキスト x 16 バイト
 
     lam_r = 2.0 ** (N - W)
@@ -181,8 +198,8 @@ def main():
     print(f"pairs N                = 2^{N}")
     print(f"data D                 = 2^{N + 1} chosen ciphertexts")
     print(f"right pairs            = 2^{N - W} = {2 ** (N - W)}")
-    print(f"after Eq.(11)          = 2^{N - f0}")
-    print(f"after Eq.(12)          = 2^{N - f0 - f1}")
+    print(f"after Eq.(13)          = 2^{N - f0}")
+    print(f"after Eq.(14)          = 2^{N - f0 - f1}")
     print(f"wrong-class expectation= 2^{N - BLOCK}")
     print(f"residual conditions    = {f0} + {f1} + {resid2} + {resid3} = "
           f"{f0 + f1 + resid2 + resid3}")
@@ -191,18 +208,20 @@ def main():
     print(f"time  Steps 1,2 = 2^{t_data:.2f} | Step 3 = 2^{t_dx1:.2f} | "
           f"Stage 1 = 2^{t_st1:.2f} | Stage 2 = 2^{t_st2:.2f} | Step 5 = 2^{t_fin:.2f}")
     print(f"time  T                = 2^{T:.2f}")
-    print(f"time  T (key recovery) = 2^{T_kr:.2f}")
+    print(f"time  T_data (Steps 1-3) = 2^{T_data:.2f}")
+    print(f"time  T_key (Steps 4, 5) = 2^{T_key:.2f}")
     print(f"memory M               = 2^{mem:.2f} bytes")
     print(f"threshold tau          = {TAU}")
     print(f"  Pr[C_right >= tau]   = {p_succ:.5f}")
-    print(f"  E[# wrong >= tau]    = 2^{log_e_wrong:.1f}")
+    print(f"  E[# background >= tau] = 2^{log_e_wrong:.1f}")
+    print(f"  E[# nearby >= tau]     = {e_near:.0f}  (seeds {sorted(nearby)})")
 
     # -------------------------------------------------- agreement with the paper
-    print("\n===== agreement with paper/SAND_DC_IEICE (Table 13, Appendix) =====")
-    check("the selected characteristic is the one of Table 12",
+    print("\n===== agreement with paper/SAND_DC_JISA (Sect. 7.3.3, Table 13, App. B) =====")
+    check("the selected characteristic is the one of Table 11",
           (trail[0] == PAPER_TRAIL_IN and trail[R] == PAPER_TRAIL_OUT))
-    check(f"wt(mask of Eq.(11)) = {PAPER['f0']}", f0 == PAPER["f0"], str(f0))
-    check(f"wt(mask of Eq.(12)) = {PAPER['f1']}", f1 == PAPER["f1"], str(f1))
+    check(f"wt(mask of Eq.(13)) = {PAPER['f0']}", f0 == PAPER["f0"], str(f0))
+    check(f"wt(mask of Eq.(14)) = {PAPER['f1']}", f1 == PAPER["f1"], str(f1))
     check(f"wt(M_K0) = {PAPER['M_K0']}", wt(e["masks"][1]) == PAPER["M_K0"],
           str(wt(e["masks"][1])))
     check(f"wt(M_K1) = {PAPER['M_K1']}", wt(e["masks"][2]) == PAPER["M_K1"],
@@ -214,14 +233,24 @@ def main():
           sB - resid3 == k + (N - BLOCK), f"2^{sB - resid3} vs 2^{k + N - BLOCK}")
     check(f"data = 2^{PAPER['data']}", N + 1 == PAPER["data"], f"2^{N + 1}")
     check(f"T = 2^{PAPER['T']}", abs(T - PAPER["T"]) < 0.1, f"2^{T:.2f}")
-    check(f"T (key recovery) = 2^{PAPER['T_kr']}", abs(T_kr - PAPER["T_kr"]) < 0.1,
-          f"2^{T_kr:.2f}")
+    check(f"T_data = 2^{PAPER['T_data']}", abs(T_data - PAPER["T_data"]) < 0.1,
+          f"2^{T_data:.2f}")
+    check(f"T_key = 2^{PAPER['T_key']}", abs(T_key - PAPER["T_key"]) < 0.1,
+          f"2^{T_key:.2f}")
+    check("nearby-class measurement available", bool(nearby),
+          "run nearby/nearby_classes.py 128 ... --json" if not nearby else "")
+    check(f"final stage (1 + E[N_wrong]) 2^56 = 2^{PAPER['t_fin']}",
+          abs(t_fin - PAPER["t_fin"]) < 0.15, f"2^{t_fin:.2f}")
+    check("final stage negligible against the two stages of Step 4",
+          t_fin < max(t_st1, t_st2) - 10, f"2^{t_fin:.1f} vs 2^{max(t_st1, t_st2):.1f}")
     check(f"memory = 2^{PAPER['mem']} bytes", abs(mem - PAPER["mem"]) < 0.1,
           f"2^{mem:.2f}")
     check(f"success probability = {PAPER['p_succ']}",
           abs(p_succ - PAPER["p_succ"]) < 1e-4, f"{p_succ:.5f}")
-    check("no wrong class is expected to survive the threshold", log_e_wrong < 0,
+    check("background classes alone stay below one at tau", log_e_wrong < 0,
           f"2^{log_e_wrong:.1f}")
+    check("but nearby classes are retained (A_j/B_j bound: E >= 5.0)", e_near >= 5.0,
+          f"{e_near:.0f}")
     check(f"data 2^{N + 1} < full codebook 2^{BLOCK}", N + 1 < BLOCK)
     check(f"time 2^{T:.2f} < exhaustive search 2^{KEYLEN}", T < KEYLEN)
 

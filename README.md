@@ -2,23 +2,37 @@
 
 Reproducible artefacts for
 
-> Nobuyuki Sugio, *Differential Attacks on Lightweight Block Cipher Family SAND*
+> Nobuyuki Sugio, *Differential Attacks on the SAND Family of Lightweight Block Ciphers*
 > (Hokkaido University of Science)
 
 Both members of the family are covered by one SAT model, differing only in the
-parameters of Table 3 of the paper. Every headline number below is reproduced by
+parameters of Table 4 of the paper. Every headline number below is reproduced by
 the search code in this repository **and** re-checked by an independent
 re-implementation that shares no code with the search.
 
+Section and table numbers below refer to the journal version
+(`paper/SAND_DC_JISA/main.tex`).
+
 | | Distinguisher | Key recovery | Data | Time | Memory |
 | --- | --- | --- | --- | --- | --- |
-| **SAND-64** | 12 rounds, $p = 2^{-57}$ | **17 rounds** | $2^{63}$ | $2^{83.5}$ | $2^{58}$ |
-| **SAND-128** | 19 rounds, $p = 2^{-120}$ | **23 rounds** | $2^{126}$ | $2^{122.5}$ | $2^{51}$ |
+| **SAND-64** | 12 rounds, $p_{\mathrm{M}} \ge 2^{-57}$ | **17 rounds** | $2^{63}$ | $2^{83.5}$ | $2^{58}$ |
+| **SAND-128** | 19 rounds, $p_{\mathrm{M}} \ge 2^{-120}$ | **23 rounds** | $2^{126}$ | $2^{122.5}$ ($T_{\mathrm{key}} = 2^{78.5}$) | $2^{51}$ |
 
 The 12-round SAND-64 distinguisher reaches $2^{-57}$ rather than $2^{-58}$
 because the 12 288 optimal characteristics of weight 58 collapse onto 6 144
 distinct $(\Delta P, \Delta C)$ pairs, **each realized by exactly two
 characteristics**.
+
+Two kinds of statement are made, and the scripts keep them apart (Section 1 of
+the paper):
+
+* **exact within the local-transition model** — minimum weights $B[r]$, the
+  enumeration, the clustering, the characteristic probabilities $p_{\mathrm{M}}$
+  (products of exact one-round probabilities);
+* **estimates** — attack complexities and success probabilities, which in
+  addition rest on stochastic equivalence and on the statistical model of
+  Section 7.3.1 (Poisson counters, wrong-key randomization for unrelated
+  classes, measured counters for nearby classes).
 
 ## The joint DDT of SSb — why a naive model is wrong
 
@@ -44,9 +58,11 @@ against the table.
 ## Layout
 
 ```
-common/    shared by both variants: the SSb layer, CNF construction, Kissat
+common/    shared by both variants: the SSb layer, CNF construction, Kissat,
+           the statistical model of the counting phase
 sand64/    SAND-64:  SAT model, enumeration, 17-round key recovery
 sand128/   SAND-128: SAT model, enumeration, 23-round key recovery
+nearby/    simulation of correlated ("nearby") wrong-key classes (needs numpy)
 build/     Kissat binary (not tracked; see Requirements)
 tests/     CNF fingerprint regression test
 ```
@@ -64,7 +80,7 @@ layout, $p_n$, the number of parallel S-boxes, and the search drivers.
 
 ## Requirements
 
-* Python 3 (standard library only)
+* Python 3 (standard library only), except `nearby/`, which needs numpy
 * [Kissat](https://github.com/arminbiere/kissat) at `build/kissat` in the
   repository root, or anywhere on `PATH`
 
@@ -74,7 +90,7 @@ Timings below were measured on Ubuntu 24.04.2 LTS, AMD Ryzen 7 5800X, 128 GB RAM
 
 These two scripts are the fastest independent check and they do **not** use the
 SAT solver at all. Each re-implements its cipher from the specification in
-Section IV of the paper and recomputes every claim — round-transition
+Section 5 of the paper and recomputes every claim — round-transition
 probabilities by an exact transfer-matrix product over the SSb positions, the
 key-free filters and guessed-key masks by exhaustive bit tracking, and the
 counting phase by simulation:
@@ -87,6 +103,57 @@ python3 sand128/verify_sand128_key_recovery.py   # 23-round attack
 Both must end with `ALL CHECKS PASSED`. The author's own search modules are
 imported only in the final section, to cross-check that the two independent
 implementations agree.
+
+The checks are of two kinds, and the output says which:
+
+* **derived from the specification** — transfer-matrix counts, the 97/157 DDT
+  counts, filters and key masks (including their sufficiency), the forward
+  insertion and the ciphertext pairing, and the nearby-class mechanisms of
+  Section 7.3 (e.g. every pair counted by the correct SAND-128 class is counted
+  by exactly one of the classes $A_j$, $B_j$);
+* **re-evaluation of formulas** under the stated assumptions — data, time,
+  memory, $\Pr[c_\star \ge \tau]$, the background term.
+
+The number of retained nearby classes is a measured quantity. It is read from
+`nearby/results/nearby_sand{64,128}_seed*.json`, which are committed; to
+regenerate them:
+
+```
+cd nearby
+python3 nearby_classes.py 64  23 1500 6 --json results/nearby_sand64_seed23.json   # ~1 min
+python3 nearby_classes.py 64  11 1500 6 --json results/nearby_sand64_seed11.json
+python3 nearby_classes.py 128 23 1500 9 --json results/nearby_sand128_seed23.json  # ~45 min
+python3 nearby_classes.py 128 11 1500 8 --json results/nearby_sand128_seed11.json
+```
+
+## Counting phase and nearby wrong-key classes
+
+Under the wrong-key randomization hypothesis, about $0.005$ (SAND-64,
+$\tau = 16$) and $0.011$ (SAND-128, $\tau = 14$) wrong classes would pass the
+threshold. This hypothesis fails for classes that differ from the correct one
+in a few bits: they share a fixed fraction $\rho$ of the correct class's pairs.
+For SAND-128, flipping $sk^1$ in row $\{3\}$ (class $A_j$) or rows
+$\{3\},\{2\}$ (class $B_j$) of an active column splits the correct pairs
+according to $u_1$, so $c_{A_j} + c_{B_j} \ge c_\star$ for every data set.
+
+`nearby/nearby_classes.py` measures $\rho$ on $2^{11}$ generated right pairs and
+evaluates $\mathbb{E}[N_{\mathrm{wrong}}] = \sum_\kappa \Pr[c_\kappa \ge \tau]$:
+
+| | $\tau$ | background | nearby (seed 23 / 11) | final search | total |
+| --- | --- | --- | --- | --- | --- |
+| SAND-64  | 16 | 0.005 | 19.1 / 20.1 | $2^{63.3}$ | $T = 2^{83.5}$ |
+| SAND-128 | 14 | 0.011 | 2394 / 1998 | $2^{67.2}$ | $T_{\mathrm{key}} = 2^{78.5}$ |
+
+Every retained class is searched, so the success probabilities
+($\Pr[c_\star \ge \tau] = 0.99934$ and $0.99988$) and all complexities are
+unchanged. SAND-64 candidates are verified against **two** known
+plaintext–ciphertext pairs (one 64-bit pair would let $2^{-5}$ wrong keys per
+class through); for SAND-128 one 128-bit pair suffices ($2^{-72}$).
+
+```
+python3 sand64/success_probability_sand64.py      # Table 12
+python3 sand128/success_probability_sand128.py    # Table 13
+```
 
 ## Regression test
 
@@ -111,18 +178,28 @@ clause counts but different fingerprints, so swapping them fails the test.
 
 | Result in the paper | Command | Data file |
 | --- | --- | --- |
-| Minimum weights $B[r]$, SAND-64 | `python3 sand64/matsui_sand64.py` | `sand64/bounds_sand64.json` |
-| Minimum weights $B[r]$, SAND-128 | `python3 sand128/matsui_sand128.py` | `sand128/bounds_sand128.json` |
-| 12-round characteristic, SAND-64 | `python3 sand64/enumerate_w58.py check 58 12` | `sand64/results/trails_w58_all.txt` |
+| Minimum weights $B[r]$, SAND-64 (Table 7) | `python3 sand64/matsui_sand64.py` | `sand64/bounds_sand64.json` |
+| Minimum weights $B[r]$, SAND-128 (Table 10) | `python3 sand128/matsui_sand128.py` | `sand128/bounds_sand128.json` |
+| 12-round characteristic, SAND-64 (Table 8) | `python3 sand64/enumerate_w58.py check 58 12` | `sand64/results/trails_w58_all.txt` |
 | Optimality of 58 | `python3 sand64/enumerate_w58.py check 57 12` → UNSAT | |
-| Round-weight vectors of the 12 288 | `python3 sand64/enum_by_wvec.py vectors` | `sand64/results/weight_vectors_58.json` |
+| Round-weight vectors of the 12 288 (Table 9) | `python3 sand64/enum_by_wvec.py vectors` | `sand64/results/weight_vectors_58.json` |
 | Completeness of the 12-round list | `python3 sand64/completeness_check.py` → UNSAT | |
-| 19-round characteristic, SAND-128 | `python3 sand128/enumerate_sand128.py 19 120` | `sand128/results/trails_sand128_r19_w120.txt` |
-| Key-free filters (Eq. 9–12) | `python3 sand128/filters_sand128.py validate` | |
-| Guessed round-key bits $k$ | `python3 sand128/keybits_sand128.py` | |
-| **All numbers of the 23-round attack** | `python3 sand128/attack_numbers.py` | |
-| Threshold $\tau$ and success probability | `python3 sand128/success_probability_sand128.py` | |
+| 19-round characteristic, SAND-128 (Table 11) | `python3 sand128/enumerate_sand128.py 19 120` | `sand128/results/trails_sand128_r19_w120.txt` |
+| Key-free filters (Eq. 13–14) | `python3 sand128/filters_sand128.py validate` | |
+| Guessed round-key bits $k$ (Appendices A, B) | `python3 sand128/keybits_sand128.py` | |
+| **All numbers of the 23-round attack** ($T$, $T_{\mathrm{data}}$, $T_{\mathrm{key}}$) | `python3 sand128/attack_numbers.py` | |
+| Nearby wrong-key classes (Section 7.3) | `python3 nearby/nearby_classes.py {64,128} ...` | `nearby/results/` |
+| Threshold $\tau$ and success probability, SAND-64 (Table 12) | `python3 sand64/success_probability_sand64.py` | |
+| Threshold $\tau$ and success probability, SAND-128 (Table 13) | `python3 sand128/success_probability_sand128.py` | |
 | Maximum attackable rounds (Discussion) | `python3 sand128/maximize_rounds.py` | |
+
+## Reproducing the unsatisfiability results
+
+The CNF instances are **not stored**: generation is deterministic (see the
+regression test above), so every satisfiable instance of weight $B[r]$ and every
+unsatisfiable instance of weight $B[r]-1$ is regenerated and re-solved by the
+commands in the table. The UNSAT verdicts are Kissat's; no independently
+checkable proof (DRAT/LRAT) is provided.
 
 ## SAND-64: enumeration and its completeness
 
@@ -191,6 +268,7 @@ of them was re-checked by the transfer-matrix computation.
 | `verify_characteristics.py` | Standalone verification of the published characteristics |
 | `completeness_check.py` | Proof that the 12-round list is complete (single UNSAT call) |
 | `verify_sand64_key_recovery.py` | **Independent verification of the 17-round attack** |
+| `success_probability_sand64.py` | Threshold $\tau$, retained classes and success probability (Table 12) |
 | `trail_io.py` | Reader/writer for the characteristic file format |
 | `results/` | The 12 288 characteristics, the 13-round example, the weight vectors |
 
@@ -208,9 +286,19 @@ of them was re-checked by the transfer-matrix computation.
 | `keybits_sand128.py` | Exact count of the guessed round-key bits $k$ |
 | `attack_numbers.py` | **Derives every number of the 23-round attack** from the characteristic data and checks it against the paper |
 | `maximize_rounds.py` | Maximizes $r_{in} + R + r_{out}$ under the key-size constraint |
-| `success_probability_sand128.py` | Threshold $\tau$ and success probability of the counting phase |
+| `success_probability_sand128.py` | Threshold $\tau$, retained classes and success probability (Table 13) |
 | `verify_sand128_key_recovery.py` | **Independent verification of the 23-round attack** |
 | `results/` | The 19-round weight-120 characteristics |
+
+### `nearby/` and `common/counting.py`
+
+| File | Role |
+| --- | --- |
+| `nearby/sand_np.py` | Vectorized round function $f$ (numpy) |
+| `nearby/check_round_function.py` | Sanity check: sampled one-round probabilities of Tables 8 and 11 |
+| `nearby/nearby_classes.py` | Measures the nearby wrong-key classes and $\mathbb{E}[N_{\mathrm{wrong}}]$ |
+| `nearby/results/` | Logs and JSON summaries of the runs used in the paper (seeds 11 and 23) |
+| `common/counting.py` | Statistical model of Section 7.3.1 (standard library only) |
 
 ## Characteristic file format
 

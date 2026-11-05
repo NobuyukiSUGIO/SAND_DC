@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Independent verification of the 17-round key-recovery attack on SAND-64
-described in paper/SAND_DC_IEICE/main.tex.
+described in paper/SAND_DC_JISA/main.tex.
 
 SAND-64 is re-implemented from the specification (four 8-bit rows, p_8, the
 row-wise rotation x <<<_{n/4} 1); nothing here is imported from the author's
@@ -187,7 +187,7 @@ check("DDT_SSb[0x6][0x62] = 0 (paper's example)", DDT[0x6][0x62] == 0)
 
 print()
 print("=" * 78)
-print("1.  the 12-round characteristic (Table 4)")
+print("1.  the 12-round characteristic (Table 8)")
 print("=" * 78)
 print(f"{'r':>3} {'dX^r':>10} {'dY^r':>10} {'paper':>6} {'exact':>6} {'count':>12}")
 tot, link, wok = 0, True, True
@@ -246,7 +246,7 @@ for lo, hi in ((1, 5), (0, 5)):
 
 print()
 print("=" * 78)
-print("2.  the enumeration of the optimal characteristics (Tables 5, 6)")
+print("2.  the enumeration of the optimal characteristics (Table 9, Eq. (10))")
 print("=" * 78)
 path = os.path.join(RESULTS, "trails_w58_all.txt")
 if not os.path.exists(path):
@@ -439,6 +439,30 @@ for _ in range(400):
 check("right pairs are counted by the true key class, and the test is invariant "
       "outside M_K0/M_K1/M_K2", comp)
 
+# nearby classes (Section 7.3.2): flipping the bit of sk^2 in row {1} of an
+# active column j changes D N_0 only through u_3 u_1, so the flipped class counts
+# a pair of the correct class iff u_3 = x^3{3}_j = 0.
+near_ok, n_near = True, 0
+for _ in range(400):
+    X4, Y4 = rnd(), rnd()
+    sk = [rnd() for _ in range(4)]
+    x, y, xs, ys = X4, Y4, X4 ^ DX4, Y4 ^ DY4
+    for r in (3, 2, 1, 0):
+        x, y = dec(x, y, sk[r])
+        xs, ys = dec(xs, ys, sk[r])
+    X0, Y0, X0s, Y0s = x, y, xs, ys
+    X1, X1s = Y0 ^ F(X0) ^ sk[0], Y0s ^ F(X0s) ^ sk[0]
+    X2, X2s = X0 ^ F(X1) ^ sk[1], X0s ^ F(X1s) ^ sk[1]
+    for j in (7, 3, 2):
+        g2 = sk[2] ^ (1 << (8 * 1 + j))
+        X3, X3s = X1 ^ F(X2) ^ g2, X1s ^ F(X2s) ^ g2
+        counted = (X2 ^ X2s ^ F(X3) ^ F(X3s)) == DX4
+        u3 = ((X1 ^ F(X2) ^ sk[2]) >> (8 * 3 + j)) & 1
+        near_ok &= counted == (u3 == 0)
+        n_near += counted
+check("a row-{1} flip of sk^2 counts a right pair iff u_3 = 0 (nearby class)",
+      near_ok, f"counted {n_near}/1200, about one half")
+
 print()
 print("=" * 78)
 print("6.  complexity arithmetic and success probability")
@@ -448,11 +472,24 @@ t = [2 ** NP, 2 ** 32 * 2 ** 54, 2 ** (32 + 22) * 2 ** 31, 2 ** (32 + 22 + 15) *
 for n, v in zip(["Step 2 (key-free filter)", "Stage 1", "Stage 2", "Stage 3"], t):
     print(f"  {n:<26} = 2^{math.log2(v):>5.0f}")
 core = (2 / rounds) * sum(t)
-T = math.log2(core + 2 ** (128 - k))
+# Step 4 searches every retained class: about 20 (background 0.005 plus the
+# nearby classes measured by nearby/nearby_classes.py)
+sys.path.insert(0, os.path.dirname(HERE))
+from common.counting import load_nearby
+_near = load_nearby(64)
+E_NEAR = _near[23][16] if 23 in _near else (max(v[16] for v in _near.values()) if _near else 0.0)
+t_fin = math.log2(1 + 0.0052 + E_NEAR) + (128 - k)
+T = math.log2(core + 2 ** t_fin)
 M = math.log2(2 ** 54 * 4 * 32 / 8)
-print(f"  (2/17) x sum + 2^59 = 2^{T:.2f}   (paper 2^83.5)")
+print(f"  final stage (1 + E[N_wrong]) 2^59 = 2^{t_fin:.2f}   (paper 2^63.3)")
+print(f"  (2/17) x sum + final = 2^{T:.2f}   (paper 2^83.5)")
 print(f"  M = 2^{M:.0f} bytes                (paper 2^58)")
 check("time matches the paper", abs(T - 83.5) < 0.1, f"2^{T:.2f}")
+check("nearby-class measurement found (nearby/results/*.json)", bool(_near))
+check("final stage matches the paper (2^63.3)", abs(t_fin - 63.3) < 0.1, f"2^{t_fin:.2f}")
+check("verification with two 64-bit pairs: 2^59 x 2^-128 = 2^-69 false keys "
+      "per class (one pair would give 2^-5)",
+      59 - 128 == -69 and abs(math.log2((2**59 - 1) * 2.0**-64) + 5) < 0.01)
 check("memory matches the paper", abs(M - 58) < 0.1, f"2^{M:.2f}")
 check("data 2^63 < full codebook 2^64", NP + 1 < 64)
 
@@ -469,14 +506,19 @@ try:
           f"E[# wrong classes retained] = 2^{math.log2(float(kept)):.1f}")
     check("success probability matches the paper (0.99934)",
           abs(float(succ) - 0.99934) < 5e-5, f"{float(succ):.5f}")
-    check("no wrong class is expected to survive tau = 16", float(kept) < 0.01,
+    check("background classes alone: below 0.01 at tau = 16", float(kept) < 0.01,
           f"{float(kept):.4f}")
+    kept15 = m * (1 - sum(pmf(i, lam_w) for i in range(15)))
+    check("background classes alone already below one at tau = 15 (0.33)",
+          abs(float(kept15) - 0.3326) < 1e-3, f"{float(kept15):.4f}")
+    check("nearby classes: about 19-20 retained at tau = 16 (paper)",
+          18.5 <= E_NEAR <= 20.5, f"{E_NEAR}")
 except ImportError:
     print("  [skipped] decimal not available")
 
 print()
 print("=" * 78)
-print("7.  minimum differential weights B[r] (Table 5)")
+print("7.  minimum differential weights B[r] (Table 7)")
 print("=" * 78)
 bpath = os.path.join(HERE, "bounds_sand64.json")
 if not os.path.exists(bpath):
@@ -485,7 +527,7 @@ else:
     Bv = {int(a): b for a, b in json.load(open(bpath)).items()}
     paper = {1: 0, 2: 2, 3: 4, 4: 8, 5: 12, 6: 18, 7: 24, 8: 32,
              9: 39, 10: 45, 11: 52, 12: 58, 13: 64, 14: 68, 15: 72}
-    check("B[r] agrees with Table 5 for every r <= 15",
+    check("B[r] agrees with Table 7 for every r <= 15",
           all(Bv.get(r) == v for r, v in paper.items()), str(Bv))
     a_des = {2: 1, 3: 2, 4: 4, 5: 6, 6: 9, 7: 12, 8: 16,
              9: 18, 10: 20, 11: 22, 12: 24, 13: 26, 14: 29, 15: 32}

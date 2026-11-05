@@ -1,80 +1,57 @@
 #!/usr/bin/env python3
 """
-23-round SAND-128 key recovery: success probability of the counting phase.
+23-round SAND-128 key recovery: threshold, retained classes and success
+probability of the counting phase (Section 7.3.3 and Table 13 of the paper).
 
-Wrong-key randomisation model.  With N pairs, a W-weight characteristic and a
-BLOCK-bit condition at the end of the distinguisher,
+Model (Section 7.3.1): N = 2^125 pairs, p = 2^-120, b = 128, k = 72,
 
-    C_right  ~ Poisson(2^(N-W)),
-    C_wrong  ~ Poisson(2^(N-BLOCK))   independently over 2^k - 1 classes.
+    c_*     ~ Poisson(2^5)
+    c_bg    ~ Poisson(2^-3)                for 2^72 - 1 background classes
+    c_near  ~ Poisson(2^5 rho + 2^-3)      for the nearby classes,
 
-Two decision rules are compared:
+the nearby term being read from nearby/results/nearby_sand128_seed*.json
+(produced by nearby/nearby_classes.py).  Every retained class is searched, so
+the final stage costs (1 + E[N_wrong]) 2^56 and the success probability is
+Pr[c_* >= tau] minus a verification false positive of about 2^-72 per class.
 
-  (a) keep the maximum-counter class(es)   -- what the draft currently says;
-  (b) keep every class whose counter is at least a threshold tau.
-
-Rule (b) is the one to put in the paper: its success probability is much
-higher and the extra classes it keeps cost only (#kept) x 2^(KEYLEN-k)
-encryptions in the final exhaustive-search stage, which stays far below the
-2^118.5 counting cost.
+This script only re-evaluates formulas; the nearby term is the one measured
+quantity it uses.
 """
-from decimal import Decimal as D, getcontext
 import math
+import os
+import sys
 
-getcontext().prec = 200
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from common.counting import load_nearby, poisson_ge, print_table, threshold_table
 
-N = 124          # log2 of the number of pairs
-W = 120          # weight of the distinguisher
-BLOCK = 128
-KEYLEN = 128
-K = 77           # guessed partial-key bits
-T_COUNT = 118.48  # log2 of the counting-stage time
+LOG_N, LOG_P, BLOCK, K = 125, -120, 128, 72
+TAU = 14
+TAUS = [10, 12, 14, 16]
+ROUNDS = 23
+# the two stages of Step 4 (Section 7.3.3): 2^35 x 2^46 and 2^72 x 2^9 round pairs
+T_STAGES = math.log2(2 / ROUNDS * (2.0 ** 81 + 2.0 ** 81))
 
-LAM_R = D(2) ** (N - W)
-LAM_W = D(2) ** (N - BLOCK)
-M = D(2) ** K - 1
-TMAX = 400
+nearby = load_nearby(128)
+if not nearby:
+    sys.exit("no nearby/results/nearby_sand128_seed*.json; run nearby/nearby_classes.py 128")
+print(f"nearby-class runs: seeds {sorted(nearby)}")
+for seed, v in sorted(nearby.items()):
+    print(f"  seed {seed}: E[nearby retained] at tau={TAU} is {v[TAU]:.0f}")
+ref_seed = 23 if 23 in nearby else min(nearby)
 
+print(f"\nTable 13 (seed {ref_seed}); T_key floor = two stages of Step 4 = 2^{T_STAGES:.2f}")
+rows = threshold_table(LOG_N, LOG_P, BLOCK, K, TAUS, nearby[ref_seed], T_STAGES)
+print_table(rows, "T_key")
 
-def pmf(t, lam):
-    return (-lam).exp() * lam ** t / D(math.factorial(t))
-
-
-PR = [pmf(t, LAM_R) for t in range(TMAX)]
-PW = [pmf(t, LAM_W) for t in range(TMAX)]
-CR = [sum(PR[:t + 1]) for t in range(TMAX)]      # P(C_right <= t)
-CW = [sum(PW[:t + 1]) for t in range(TMAX)]      # P(C_wrong <= t)
-
-
-def l2(x):
-    return float(x).__format__(".4g") if x == 0 else f"2^{math.log2(float(x)):.1f}"
-
-
-print(f"parameters: N = 2^{N}, W = {W}, k = {K}")
-print(f"  E[C_right] = {float(LAM_R):g}, E[C_wrong] = 2^{N-BLOCK} = {float(LAM_W):g}, "
-      f"wrong classes = 2^{K}")
-print()
-
-# ---- rule (a): take the maximum ------------------------------------------
-strict = sum(PR[t] * CW[t - 1] ** int(M) for t in range(1, TMAX))
-incl = sum(PR[t] * CW[t] ** int(M) for t in range(TMAX))
-print("(a) keep the maximum-counter class:")
-print(f"    P(correct is the strict maximum)      = {float(strict):.4%}")
-print(f"    P(correct is among the maxima)        = {float(incl):.4%}")
-print()
-
-# ---- rule (b): threshold --------------------------------------------------
-print("(b) keep every class with counter >= tau:")
-print(f"    {'tau':>4} {'P(success)':>12} {'E[wrong kept]':>15} "
-      f"{'final search':>14} {'total time':>12}")
-for tau in range(4, 15):
-    succ = 1 - CR[tau - 1]
-    kept = M * (1 - CW[tau - 1])
-    final = float(1 + kept) * 2 ** (KEYLEN - K)
-    total = math.log2(2 ** T_COUNT + final)
-    print(f"    {tau:>4} {float(succ):>11.4%} {l2(kept):>15} "
-          f"{l2(D(final)):>14} {'2^%.2f' % total:>12}")
-print()
-print(f"The counting stage alone costs 2^{T_COUNT}, so any tau <= 12 leaves the")
-print(f"total time unchanged at 2^{T_COUNT} while keeping the success probability")
-print("above 99%.")
+succ = poisson_ge(2.0 ** (LOG_N + LOG_P), TAU)
+lo = min(v[TAU] for v in nearby.values())
+hi = max(v[TAU] for v in nearby.values())
+fin = math.log2((1 + hi) * 2.0 ** (128 - K))
+print(f"\ntau = {TAU}: Pr[c_* >= tau] = {succ:.5f}, success probability "
+      f"{succ - (1 + hi) * 2.0 ** (128 - K - BLOCK):.4f}")
+print(f"  E[N_wrong] = {lo:.0f} .. {hi:.0f} (= 2^{math.log2(hi):.1f}), "
+      f"final stage 2^{fin:.1f}, T_key = 2^{math.log2(2**T_STAGES + 2**fin):.2f}")
+print(f"  even 2^20 retained classes would give "
+      f"T_key = 2^{math.log2(2**T_STAGES + 2.0**(20 + 128 - K)):.2f}")
+print(f"  lower bound from the A_j/B_j construction: Pr[c_* >= {2*TAU-1}] = "
+      f"{poisson_ge(32.0, 2*TAU-1):.4f}, E[N_wrong] >= {6*poisson_ge(32.0, 2*TAU-1):.3f}")
