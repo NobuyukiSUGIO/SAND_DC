@@ -251,13 +251,72 @@ Unlike SAND-64, the 19-round weight-120 list is **not** claimed to be
 exhaustive; 151 distinct characteristics of weight 120 were found and every one
 of them was re-checked by the transfer-matrix computation.
 
+## Key-recovery-aware search: the ciphertext-side constraint
+
+A minimum-weight characteristic is not necessarily the one that yields the
+cheapest key recovery (Section 6.3). Because the attacks prepend a single round
+and recover the round-key bits on the **ciphertext side** from the appended
+rounds, the end that drives the cost is the *output* boundary
+$(\Delta X^R, \Delta Y^R)$: its active SSb nibbles fix the subkey positions that
+must be guessed. The two SAT models therefore accept a cardinality constraint on
+the number of active nibbles at that boundary.
+
+For each nibble $j$ of a boundary word, `add_nibble_indicators()` introduces an
+indicator $a_j = \mathrm{OR}$ of its four bits, and a sequential-counter
+constraint bounds $\sum_j a_j$. `run_without_key()` exposes two keyword
+arguments:
+
+* `max_nib_ct` — upper bound on the active nibbles of the output boundary
+  $(\Delta X^R, \Delta Y^R)$ (the ciphertext side; recommended). Since
+  $\Delta Y^R = \Delta X^{R-1}$, bounding it thins the two outermost rounds
+  through which the key is recovered.
+* `max_nib_pt` — the same for the input boundary $(\Delta X^0, \Delta Y^0)$
+  (for a plaintext-side recovery).
+
+Both default to `None` (no constraint). Edit the value in the `__main__` block,
+or drive the model directly:
+
+```python
+from importlib import import_module
+# SAND-64: 12-round, weight <= 58, output boundary with at most 5 active nibbles
+import sys; sys.path.insert(0, "sand64")
+m = import_module("SAND-64_20260729").SAND_64_SAT_Model()
+m.run_without_key(12, 58, max_nib_ct=5)          # searches an output-sparse trail
+```
+
+```
+python3 sand64/SAND-64_20260729.py      # __main__ runs 12R / w<=58 / max_nib_ct=5
+python3 sand128/SAND-128_DifferentialCryptanalysis_Kissat_Standalone_20260805.py
+                                        # __main__ runs 19R / w<=120 / max_nib_ct=11
+```
+
+The active-nibble count is only a **proxy**: the exact number of guessed
+round-key bits also depends on the difference *values* through the SSb
+derivatives, and is computed by `sand128/keybits_sand128.py` (it serves both
+variants, taking `ncols` as a parameter). Feed it the output boundary with the
+branches exchanged to obtain the ciphertext-side cost — e.g. for the SAND-64
+characteristic $C_2$ with output $(\Delta X^{13},\Delta Y^{13}) =
+(\mathtt{008C0000}, \mathtt{00900000})$:
+
+```python
+import sys; sys.path.insert(0, "sand128")
+import keybits_sand128 as KB
+pb64 = [7, 4, 1, 6, 3, 0, 5, 2]
+k, masks = KB.key_bits(0x00900000, 0x008C0000, 4, 8, pb64)   # -> k = 69
+```
+
+so that the two search programs locate a sparse output while `keybits_sand128.py`
+scores the candidates by their true key-recovery cost. For SAND-128 the
+dedicated driver `keyrecovery_sand128.py` additionally offers the same
+`max_nib_ct` / `max_nib_pt` constraints through its `build()` function.
+
 ## Files
 
 ### `sand64/`
 
 | File | Role |
 | --- | --- |
-| `SAND-64_20260729.py` | SAT model (joint SSb DDT, cardinality constraints, Kissat interface) |
+| `SAND-64_20260729.py` | SAT model (joint SSb DDT, weight and output-boundary cardinality constraints, Kissat interface); `run_without_key(..., max_nib_ct=)` searches ciphertext-side-sparse trails |
 | `matsui_sand64.py` | Matsui-style lower-bound pruning; computes $B[r]$ incrementally |
 | `enumerate_w58.py` | Exactly-$k$ cardinality constraint, single-slice enumeration, `check` mode |
 | `enum_by_wvec.py` | Phase A (realizable round-weight vectors) and per-vector enumeration |
@@ -276,7 +335,7 @@ of them was re-checked by the transfer-matrix computation.
 
 | File | Role |
 | --- | --- |
-| `SAND-128_..._20260805.py` | SAT model |
+| `SAND-128_..._20260805.py` | SAT model; `run_without_key(..., max_nib_ct=)` searches ciphertext-side-sparse trails (output-boundary nibble constraint) |
 | `matsui_sand128.py` | Matsui-style lower-bound pruning; computes $B[r]$ |
 | `run_sand128_bound.py` | Driver for a single bounded search |
 | `enumerate_sand128.py` | All-SAT enumeration for given rounds and weight bound |
