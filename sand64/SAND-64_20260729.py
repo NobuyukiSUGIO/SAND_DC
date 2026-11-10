@@ -230,6 +230,34 @@ class SAND_64_SAT_Model(SSbMixin, CnfMixin, SolverMixin):
             var = variables[f"x_{i + 32}_{round}"]
             self.clauses.append([var] if bit == 1 else [-var])
 
+    def add_nibble_indicators(self, variables, round, half):
+        """
+        境界差分の「活性ニブル (SSb 位置)」を表す指示変数を作る (本文 6.3 節)。
+
+        鍵回復で推測すべき丸鍵ビット数を支配するのは活性ビット数ではなく,
+        活性 SSb ニブルの個数である (1 活性ニブル = 1 サブ鍵ニブルの推測)。
+        そこで各ニブル j に指示変数 a_j = OR(4 ビット) を導入する:
+            * いずれかのビットが 1 なら a_j = 1   (bit -> a_j)
+            * a_j = 1 ならいずれかのビットが 1   (a_j -> OR bits)
+
+        half='X' -> ΔX^round (x_{i}_{round},    0<=i<32),
+        half='Y' -> ΔY^round (x_{i+32}_{round}, 0<=i<32).
+        SAND-64 のニブル j (0<=j<8) はビット {j, j+8, j+16, j+24} から成る
+        (s_box_model の入力ニブルの取り方と一致させる)。
+        返り値: 8 個の指示変数のリスト。
+        """
+        base = 0 if half == "X" else 32
+        indicators = []
+        for j in range(8):
+            self.aux_var_counter += 1
+            a = self.aux_var_counter
+            bits = [variables[f"x_{base + off}_{round}"] for off in (j, j + 8, j + 16, j + 24)]
+            for b in bits:
+                self.clauses.append([-b, a])          # bit -> active nibble
+            self.clauses.append([-a] + bits)          # active nibble -> some bit
+            indicators.append(a)
+        return indicators
+
     def permutation(self, input_bits, output_bits):
         """Permutation layer using the P-box."""
         for j in range(4):
@@ -471,11 +499,16 @@ class SAND_64_SAT_Model(SSbMixin, CnfMixin, SolverMixin):
         else:
             print("The problem is unsatisfiable.")
 
-    def run_without_key(self, num_rounds, num_bounds, output_diff=None, input_diff=None):
+    def run_without_key(self, num_rounds, num_bounds, output_diff=None, input_diff=None,
+                        max_nib_ct=None, max_nib_pt=None):
         """
         平文側から暗号文側へ順方向に伝搬させる探索を行う
         output_diff: (ΔX^R, ΔY^R) … 暗号文側 (r = num_rounds) を固定する場合に指定する
         input_diff : (ΔX^0, ΔY^0) … 平文側 (r = 0) を固定する場合に指定する
+        max_nib_ct : 暗号文側境界 (ΔX^R, ΔY^R) の活性ニブル数の上限 (本文 6.3 節)。
+                     本研究の攻撃は暗号文側で丸鍵を推測するので, 出力が疎な特性を
+                     選ぶために既定ではこちらを絞り込む。
+        max_nib_pt : 平文側境界 (ΔX^0, ΔY^0) の活性ニブル数の上限 (平文側鍵回復向け)。
         差分特性は print_characteristics_forward() により16進数で出力される
         """
         # define variables
@@ -496,6 +529,25 @@ class SAND_64_SAT_Model(SSbMixin, CnfMixin, SolverMixin):
         if output_diff is not None:
             self.fix_state_difference(variables, num_rounds, output_diff[0], output_diff[1])
             print(f"Fixed output difference: (dX^{num_rounds}, dY^{num_rounds}) = ({output_diff[0]}, {output_diff[1]})")
+
+        # --- 本文 6.3 節: 鍵回復に有利な (端が疎な) 特性を選ぶカーディナリティ制約 ---
+        # 暗号文側 (出力側) 境界 (ΔX^R, ΔY^R) の活性 SSb ニブル数を絞り込む。
+        # ΔY^R = ΔX^{R-1} なので, これは最外 2 ラウンドで推測する SSb 位置を同時に
+        # 疎にすることに相当する。
+        if max_nib_ct is not None:
+            ind = self.add_nibble_indicators(variables, num_rounds, "X") + \
+                  self.add_nibble_indicators(variables, num_rounds, "Y")
+            self.sequential_encoding_method_for_vars(ind, max_nib_ct)
+            print(f"Added key-recovery constraint: at most {max_nib_ct} active nibbles "
+                  f"at the ciphertext-side boundary (dX^{num_rounds}, dY^{num_rounds})")
+
+        # 平文側 (入力側) 境界 (ΔX^0, ΔY^0) を疎にする場合 (平文側鍵回復向け)。
+        if max_nib_pt is not None:
+            ind = self.add_nibble_indicators(variables, 0, "X") + \
+                  self.add_nibble_indicators(variables, 0, "Y")
+            self.sequential_encoding_method_for_vars(ind, max_nib_pt)
+            print(f"Added key-recovery constraint: at most {max_nib_pt} active nibbles "
+                  f"at the plaintext-side boundary (dX^0, dY^0)")
 
         # solve SAT model and print the result
         print(f"Solving SAND-64 differential cryptanalysis with {num_rounds} rounds and bound {num_bounds}")
@@ -520,13 +572,14 @@ if __name__ == "__main__":
     # num_rounds:r, num_bounds:m
     r, b = 12, 58
 
-    # 選択暗号文攻撃の立場: 12段目の差分を固定し, 暗号文側から平文側へ逆伝搬させる
-    # 12-round differential distinguisher of SAND-64 (Table 3 of the paper)
-    # ciphertext_diff = ("0492 9600", "0003 8000")  # (dX^12, dY^12)
+    # 選択平文攻撃 (1+12+4) の立場: 暗号文側 (出力側) で丸鍵を推測するので,
+    # 出力境界 (ΔX^12, ΔY^12) の活性ニブルが疎な特性を探す (本文 6.3 節)。
+    # 既知の特性 C2 の出力 (008C0000, 00900000) は活性ニブル 3+2 = 5 個なので,
+    # 上限 5 で探索すると同等以上に疎な出力を持つ重み 58 の特性が得られる。
     ciphertext_diff = None
-    # 平文側の差分 (dX^0, dY^0) も固定する場合は次の行を有効にする
-    # plaintext_diff = ("0046 0000", "00F0 0000")
     plaintext_diff = None
+    max_nib_ct = 5    # 暗号文側境界 (ΔX^12, ΔY^12) の活性ニブル数の上限
+    max_nib_pt = None # 平文側境界を疎にしたい場合はこちらに整数を設定する
 
     # 実行結果をスクリプトと同じディレクトリの results.txt に出力する
     result_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), "results.txt")
@@ -535,11 +588,13 @@ if __name__ == "__main__":
         stdout = sys.stdout
         sys.stdout = Tee(stdout, f)
         try:
-            print(f"Running SAND-64 differential cryptanalysis (backward / chosen ciphertext):")
+            print(f"Running SAND-64 differential cryptanalysis (forward / chosen plaintext):")
             print(f"Rounds: {r}, Bound: {b}")
             model.verify_ssb_model()
             print("-" * 50)
-            model.run_without_key(r, b, ciphertext_diff, plaintext_diff)
+            # 出力境界を疎にして暗号文側鍵回復に有利な特性を探す (本文 6.3 節)
+            model.run_without_key(r, b, ciphertext_diff, plaintext_diff,
+                                  max_nib_ct=max_nib_ct, max_nib_pt=max_nib_pt)
             #model.run_backward_without_key(r, b, ciphertext_diff, plaintext_diff)
         finally:
             sys.stdout = stdout

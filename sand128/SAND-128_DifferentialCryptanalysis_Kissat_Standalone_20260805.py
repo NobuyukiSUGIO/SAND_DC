@@ -178,6 +178,34 @@ class SAND_128_SAT_Model(SSbMixin, CnfMixin, SolverMixin):
             var = variables[f"x_{i + 64}_{round}"]
             self.clauses.append([var] if bit == 1 else [-var])
 
+    def add_nibble_indicators(self, variables, round, half):
+        """
+        境界差分の「活性ニブル (SSb 位置)」を表す指示変数を作る (本文 6.3 節)。
+
+        鍵回復で推測すべき丸鍵ビット数を支配するのは活性ビット数ではなく,
+        活性 SSb ニブルの個数である (1 活性ニブル = 1 サブ鍵ニブルの推測)。
+        各ニブル j に指示変数 a_j = OR(4 ビット) を導入する:
+            * いずれかのビットが 1 なら a_j = 1   (bit -> a_j)
+            * a_j = 1 ならいずれかのビットが 1   (a_j -> OR bits)
+
+        half='X' -> ΔX^round (x_{i}_{round},    0<=i<64),
+        half='Y' -> ΔY^round (x_{i+64}_{round}, 0<=i<64).
+        SAND-128 のニブル j (0<=j<16) はビット {j, j+16, j+32, j+48} から成る
+        (s_box_model の入力ニブルの取り方と一致させる)。
+        返り値: 16 個の指示変数のリスト。
+        """
+        base = 0 if half == "X" else 64
+        indicators = []
+        for j in range(16):
+            self.aux_var_counter += 1
+            a = self.aux_var_counter
+            bits = [variables[f"x_{base + off}_{round}"] for off in (j, j + 16, j + 32, j + 48)]
+            for b in bits:
+                self.clauses.append([-b, a])          # bit -> active nibble
+            self.clauses.append([-a] + bits)          # active nibble -> some bit
+            indicators.append(a)
+        return indicators
+
     def permutation(self, input_bits, output_bits):
         """Permutation layer using the P-box."""
         for j in range(4):
@@ -434,44 +462,66 @@ class SAND_128_SAT_Model(SSbMixin, CnfMixin, SolverMixin):
         else:
             print("The problem is unsatisfiable.")
 
-    def run_without_key(self, num_rounds, num_bounds, max_plaintext_ones, max_output_ones):
+    def run_without_key(self, num_rounds, num_bounds, max_plaintext_ones=None, max_output_ones=None,
+                        max_nib_ct=None, max_nib_pt=None):
+        """
+        平文側から暗号文側へ順方向に伝搬させる探索を行う。
+
+        本研究の 1+19+3 攻撃は暗号文側 (出力側) で丸鍵を推測するので, 出力が疎な
+        特性を選ぶ (本文 6.3 節)。推奨は活性ニブル単位の制約 max_nib_ct であり,
+        これは出力境界 (ΔX^R, ΔY^R) の活性 SSb ニブル数を絞り込む。
+        ΔY^R = ΔX^{R-1} なので, 最外 2 ラウンドで推測する SSb 位置を同時に疎にする。
+
+        max_plaintext_ones / max_output_ones : 後方互換用の旧式のビット数制約
+            (ΔY^0 / ΔX^R の 1 の個数)。既定の None では課さない。
+        max_nib_ct : 暗号文側境界 (ΔX^R, ΔY^R) の活性ニブル数の上限 (推奨)。
+        max_nib_pt : 平文側境界 (ΔX^0, ΔY^0) の活性ニブル数の上限 (平文側鍵回復向け)。
+        """
         # define variables
         variables = self.generate_variables(num_rounds)
 
         # generate SAT model for SLIM without key
         self.Search_Differential_Distingusher(num_rounds, num_bounds, variables)
-        
+
         # input differentials != all_0
         self.clauses.append([variables[str("x_" + str(i) + "_0")] for i in range(0,128)])
 
-        # 平文差分の制約: x_{i}_0 (32<=i) の1を最小化
-        # 右半分の64ビット（x_64_0からx_127_0）に対して制約を追加
-        plaintext_vars_to_minimize = []
-        for i in range(64, 128):  # 64から127まで（64ビット）
-            plaintext_vars_to_minimize.append(variables[f"x_{i}_0"])
-        
-        # これらの変数の合計を制限
-        self.vars = plaintext_vars_to_minimize
-        self.sequential_encoding_method(max_plaintext_ones)
-        
-        # 最終段出力差分の制約: x_{i}_{r} (0<=i<64) の1を最小化
-        output_vars_to_minimize = []
-        for i in range(64):  # 0から63まで（64ビット）
-            output_vars_to_minimize.append(variables[f"x_{i}_{num_rounds}"])
-        
-        # これらの変数の合計を制限
-        self.vars = output_vars_to_minimize
-        self.sequential_encoding_method(max_output_ones)
+        # --- 本文 6.3 節: 鍵回復に有利な (端が疎な) 特性を選ぶカーディナリティ制約 ---
+        # 暗号文側 (出力側) 境界 (ΔX^R, ΔY^R) の活性 SSb ニブル数を絞り込む (推奨)。
+        if max_nib_ct is not None:
+            ind = self.add_nibble_indicators(variables, num_rounds, "X") + \
+                  self.add_nibble_indicators(variables, num_rounds, "Y")
+            self.vars = ind
+            self.sequential_encoding_method(max_nib_ct)
+            print(f"Added key-recovery constraint: at most {max_nib_ct} active nibbles "
+                  f"at the ciphertext-side boundary (dX^{num_rounds}, dY^{num_rounds})")
+
+        # 平文側 (入力側) 境界 (ΔX^0, ΔY^0) を疎にする場合 (平文側鍵回復向け)。
+        if max_nib_pt is not None:
+            ind = self.add_nibble_indicators(variables, 0, "X") + \
+                  self.add_nibble_indicators(variables, 0, "Y")
+            self.vars = ind
+            self.sequential_encoding_method(max_nib_pt)
+            print(f"Added key-recovery constraint: at most {max_nib_pt} active nibbles "
+                  f"at the plaintext-side boundary (dX^0, dY^0)")
+
+        # --- 旧式のビット数制約 (後方互換: run_sand128_bound.py 等が使用) ---
+        # 平文差分 ΔY^0 = x_{i}_0 (64<=i<128) の 1 を最小化
+        if max_plaintext_ones is not None:
+            self.vars = [variables[f"x_{i}_0"] for i in range(64, 128)]
+            self.sequential_encoding_method(max_plaintext_ones)
+
+        # 最終段出力差分 ΔX^R = x_{i}_{R} (0<=i<64) の 1 を最小化
+        if max_output_ones is not None:
+            self.vars = [variables[f"x_{i}_{num_rounds}"] for i in range(64)]
+            self.sequential_encoding_method(max_output_ones)
 
         # solve SAT model and print the result
         print(f"Solving SAND-128 differential cryptanalysis with {num_rounds} rounds and bound {num_bounds}")
         print("Using Kissat SAT solver (standalone version)...")
         print(f"Number of variables: {self.aux_var_counter}")
         print(f"Number of clauses: {len(self.clauses)}")
-        print("Added constraints: ")
-        print(f"  - Plaintext differential x_i_0 (64<=i<128): max {max_plaintext_ones} ones")
-        print(f"  - Output differential x_i_{num_rounds} (0<=i<64): max {max_output_ones} ones")
-        
+
         result_boolean, result_model = self.solve()
         if result_boolean:
             print("The problem is satisfiable with model:")
@@ -497,9 +547,12 @@ if __name__ == "__main__":
     # plaintext_diff = ("0000 0000 0000 0000", "0000 0000 0000 0000")
     plaintext_diff = None
 
-    # 差分を固定しない側の絞り込み（1の個数の上限）
-    max_plaintext_ones = 10   # 平文差分 dY^0 の1の個数の上限
-    max_output_ones = 10      # 暗号文差分 dX^19 の1の個数の上限
+    # 選択平文攻撃 (1+19+3) の立場: 暗号文側 (出力側) で丸鍵を推測するので,
+    # 出力境界 (ΔX^19, ΔY^19) の活性ニブルが疎な特性を探す (本文 6.3 節)。
+    # 既知の特性 D2 の出力 (CC0C, 1115) は活性ニブル 6+5 = 11 個なので, 上限 11 で
+    # D2 同等の特性が得られる。より小さい値にすると出力がさらに疎な候補を探索する。
+    max_nib_ct = 11   # 暗号文側境界 (ΔX^19, ΔY^19) の活性ニブル数の上限
+    max_nib_pt = None # 平文側境界を疎にしたい場合はこちらに整数を設定する
 
     # 実行結果を results/results_SAND-128.txt に出力する
     _results = os.path.join(os.path.dirname(os.path.abspath(__file__)), "results")
@@ -514,7 +567,8 @@ if __name__ == "__main__":
             print(f"Rounds: {r}, Bound: {b}")
             model.verify_ssb_model()
             print("-" * 50)
-            model.run_without_key(r, b, max_plaintext_ones, max_output_ones)
+            # 出力境界を疎にして暗号文側鍵回復に有利な特性を探す (本文 6.3 節)
+            model.run_without_key(r, b, max_nib_ct=max_nib_ct, max_nib_pt=max_nib_pt)
             #model.run_backward_without_key(r, b, ciphertext_diff, plaintext_diff, max_plaintext_ones, max_output_ones)
         finally:
             sys.stdout = stdout
@@ -523,4 +577,4 @@ if __name__ == "__main__":
     print(f"Results are saved in {result_file}")
 
     # 順方向（平文側 -> 暗号文側）で探索する場合は run_without_key() を使用する
-    # model.run_without_key(r, b, max_plaintext_ones, max_output_ones)
+    # model.run_without_key(r, b, max_nib_ct=max_nib_ct)

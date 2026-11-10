@@ -1,5 +1,8 @@
 #!/usr/bin/env python3
 """Kissat の呼び出しと解の取り出し。ブロック長に依存しない。"""
+import os
+import subprocess
+import tempfile
 
 
 class SolverMixin:
